@@ -1,0 +1,64 @@
+import { authenticatedApiFetch } from "@/lib/api/authenticated-client";
+
+import type {
+  ApiDataEnvelope,
+  BroadcastInput,
+  OpsBusinessDetail,
+  OpsBusinessMembership,
+  OpsBusinessMembershipUpsertInput,
+  OpsBusinessesListResponse,
+  OpsBusinessStatusInput,
+  OpsDashboardData,
+  OpsMetricsData,
+  PayoutItem,
+  ReconcileResponse,
+  SettlementDashboardData,
+  SettlementImportDetailResponse,
+  SettlementImportListResponse,
+  SettlementRecordDetailResponse,
+  SettlementRecordListResponse,
+} from "@/features/ops-console/types";
+
+function qs(params: Record<string, string | number | boolean | undefined | null>) {
+  const search = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === "") return;
+    search.set(key, String(value));
+  });
+  const text = search.toString();
+  return text ? `?${text}` : "";
+}
+
+async function getEnvelope<T>(path: string) {
+  const response = await authenticatedApiFetch<ApiDataEnvelope<T>>(path);
+  return response.data;
+}
+
+export const getOpsDashboard = () => getEnvelope<OpsDashboardData>("/api/v1/ops/dashboard/");
+export const getOpsMetrics = () => getEnvelope<OpsMetricsData>("/api/v1/ops/metrics/");
+export const listOpsBusinesses = (params: Record<string, string | number | boolean | undefined | null>) => getEnvelope<OpsBusinessesListResponse>(`/api/v1/ops/businesses/${qs(params)}`);
+export const getOpsBusinessDetail = (businessId: string | number) => getEnvelope<OpsBusinessDetail>(`/api/v1/ops/businesses/${businessId}/`);
+export const listOpsBusinessMemberships = (businessId: string | number) => getEnvelope<OpsBusinessMembership[]>(`/api/v1/ops/businesses/${businessId}/memberships/`);
+export const upsertOpsBusinessMembership = (businessId: string | number, input: OpsBusinessMembershipUpsertInput) => authenticatedApiFetch<ApiDataEnvelope<Record<string, unknown>>>(`/api/v1/ops/businesses/${businessId}/memberships/`, { method: "POST", useIdempotencyKey: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) });
+export const deactivateOpsBusinessMembership = (businessId: string | number, userId: number) => authenticatedApiFetch<ApiDataEnvelope<Record<string, unknown>>>(`/api/v1/ops/businesses/${businessId}/memberships/deactivate/`, { method: "POST", useIdempotencyKey: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user_id: userId }) });
+export const updateOpsBusinessStatus = (businessId: string | number, input: OpsBusinessStatusInput) => authenticatedApiFetch<ApiDataEnvelope<Record<string, unknown>>>(`/api/v1/ops/businesses/${businessId}/status/`, { method: "PATCH", useIdempotencyKey: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) });
+export const triggerOpsSubmerchant = (businessId: string | number) => authenticatedApiFetch<Record<string, unknown>>(`/api/v1/ops/businesses/${businessId}/iyzico/submerchant/`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": `ops-submerchant-${businessId}-${Date.now()}` }, body: JSON.stringify({}) });
+export const listPayouts = () => getEnvelope<PayoutItem[]>("/api/v1/ops/payouts/");
+export const getPayoutDetail = (payoutId: string | number) => getEnvelope<PayoutItem>(`/api/v1/ops/payouts/${payoutId}/`);
+export const confirmPayout = (payoutId: string | number, note: string) => authenticatedApiFetch<ApiDataEnvelope<Record<string, unknown>>>(`/api/v1/ops/payouts/${payoutId}/confirm/`, { method: "POST", useIdempotencyKey: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ note }) });
+export const dispatchPayouts = (limit: number, worker: string) => authenticatedApiFetch<ApiDataEnvelope<Record<string, unknown>>>("/api/v1/ops/payouts/dispatch-due/", { method: "POST", useIdempotencyKey: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ limit, worker }) });
+export const getReconcileBusiness = (businessId: string | number) => getEnvelope<ReconcileResponse>(`/api/v1/ops/reconcile/business/${businessId}/`);
+export const getSettlementDashboard = () => getEnvelope<SettlementDashboardData>("/api/v1/payments/ops/settlement/dashboard/");
+export const listSettlementImports = (params: Record<string, string | number | boolean | undefined | null>) => getEnvelope<SettlementImportListResponse>(`/api/v1/payments/ops/settlement/imports/${qs(params)}`);
+export const getSettlementImportDetail = (importId: string | number) => getEnvelope<SettlementImportDetailResponse>(`/api/v1/payments/ops/settlement/imports/${importId}/`);
+export const retrySettlementImport = (importId: string | number) => authenticatedApiFetch<ApiDataEnvelope<Record<string, unknown>>>(`/api/v1/payments/ops/settlement/imports/${importId}/retry/`, { method: "POST", useIdempotencyKey: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
+export async function uploadSettlementFile(file: File) {
+  const formData = new FormData();
+  formData.set("file", file);
+  return authenticatedApiFetch<Record<string, unknown>>("/api/v1/payments/ops/settlement/imports/upload/", { method: "POST", useIdempotencyKey: true, body: formData });
+}
+export const listSettlementRecords = (params: Record<string, string | number | boolean | undefined | null>) => getEnvelope<SettlementRecordListResponse>(`/api/v1/payments/ops/settlement/records/${qs(params)}`);
+export const getSettlementRecordDetail = (recordId: string | number) => getEnvelope<SettlementRecordDetailResponse>(`/api/v1/payments/ops/settlement/records/${recordId}/`);
+export const reprocessSettlementRecord = (recordId: string | number) => authenticatedApiFetch<Record<string, unknown>>(`/api/v1/payments/ops/settlement/records/${recordId}/reprocess/`, { method: "POST", useIdempotencyKey: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
+export const reviewSettlementRecord = (recordId: string | number, input: { review_status?: string; operator_note?: string }) => authenticatedApiFetch<Record<string, unknown>>(`/api/v1/payments/ops/settlement/records/${recordId}/review/`, { method: "PATCH", useIdempotencyKey: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) });
+export const queueBroadcast = (input: BroadcastInput) => authenticatedApiFetch<Record<string, unknown>>("/api/v1/notifications/admin/broadcast/", { method: "POST", useIdempotencyKey: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) });

@@ -1,0 +1,5577 @@
+openapi: 3.0.3
+info:
+  title: HalkYemek API
+  version: dev
+  description: Beylikdüzü odaklı QR + Wallet yemek sistemi
+paths:
+  /api/v1/auth/google/:
+    post:
+      operationId: auth_google_login
+      description: Google ID token ile giriş yapar, JWT access/refresh token döndürür.
+        role alanı artık kabul edilmez.
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GoogleLoginRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/GoogleLoginRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/GoogleLoginRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoogleLoginResponse'
+              examples:
+                GoogleLoginSuccess:
+                  value:
+                    access: jwt-access-token
+                    refresh: jwt-refresh-token
+                    is_new: false
+                    user:
+                      id: 12
+                      username: g_1133557799
+                      google_email: user@example.com
+                    has_business_membership: true
+                    business_membership_count: 1
+                    businesses:
+                    - id: 4
+                      name: Halk Lokantası Beylikdüzü
+                      member_role: MANAGER
+                  summary: Google login success
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorEnvelope'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorEnvelope'
+          description: ''
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorEnvelope'
+          description: ''
+  /api/v1/auth/login/:
+    post:
+      operationId: api_v1_auth_login_create
+      description: |-
+        Takes a set of user credentials and returns an access and refresh JSON web
+        token pair to prove the authentication of those credentials.
+      tags:
+      - api
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenObtainPairRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TokenObtainPairRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TokenObtainPairRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenObtainPair'
+          description: ''
+  /api/v1/auth/refresh/:
+    post:
+      operationId: api_v1_auth_refresh_create
+      description: |-
+        Takes a refresh type JSON web token and returns an access type JSON web
+        token if the refresh token is valid.
+      tags:
+      - api
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenRefreshRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TokenRefreshRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TokenRefreshRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenRefresh'
+          description: ''
+  /api/v1/businesses/{business_id}/categories/:
+    get:
+      operationId: api_v1_businesses_categories_list
+      parameters:
+      - in: path
+        name: business_id
+        schema:
+          type: integer
+        required: true
+      - name: ordering
+        required: false
+        in: query
+        description: Sonuçların sıralanmasında kullanılacak alan.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: Sayfalanmış sonuç kümesinde bir sayfa numarası.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Her sayfada döndürülecek sonuç sayısı.
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: Bir arama terimi.
+        schema:
+          type: string
+      tags:
+      - api
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedBusinessCategoryList'
+          description: ''
+    post:
+      operationId: api_v1_businesses_categories_create
+      parameters:
+      - in: path
+        name: business_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - api
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BusinessCategoryRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BusinessCategoryRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BusinessCategoryRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessCategory'
+          description: ''
+  /api/v1/businesses/{business_id}/categories/{category_id}/:
+    get:
+      operationId: api_v1_businesses_categories_retrieve
+      parameters:
+      - in: path
+        name: business_id
+        schema:
+          type: integer
+        required: true
+      - in: path
+        name: category_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - api
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessCategory'
+          description: ''
+    put:
+      operationId: api_v1_businesses_categories_update
+      parameters:
+      - in: path
+        name: business_id
+        schema:
+          type: integer
+        required: true
+      - in: path
+        name: category_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - api
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BusinessCategoryRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BusinessCategoryRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BusinessCategoryRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessCategory'
+          description: ''
+    patch:
+      operationId: api_v1_businesses_categories_partial_update
+      parameters:
+      - in: path
+        name: business_id
+        schema:
+          type: integer
+        required: true
+      - in: path
+        name: category_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - api
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedBusinessCategoryRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedBusinessCategoryRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedBusinessCategoryRequest'
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessCategory'
+          description: ''
+    delete:
+      operationId: api_v1_businesses_categories_destroy
+      parameters:
+      - in: path
+        name: business_id
+        schema:
+          type: integer
+        required: true
+      - in: path
+        name: category_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - api
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/businesses/{business_id}/checkout-sessions/{token}/consume/:
+    post:
+      operationId: checkout_session_consume
+      parameters:
+      - in: path
+        name: business_id
+        schema:
+          type: integer
+        required: true
+      - in: path
+        name: token
+        schema:
+          type: string
+        required: true
+      tags:
+      - checkout
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckoutConsumeResponse'
+              examples:
+                StandardErrorEnvelope:
+                  value:
+                    ok: false
+                    error:
+                      code: ValidationError
+                      message:
+                        amount:
+                        - Ensure this value is greater than or equal to 1.
+                      request_id: 9b6b2d4cc92f44a28e3a5d2c7d92b001
+                  summary: Standard error envelope
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorEnvelope'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorEnvelope'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorEnvelope'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorEnvelope'
+          description: ''
+        '410':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorEnvelope'
+          description: ''
+  /api/v1/businesses/{business_id}/checkout-sessions/{token}/preview/:
+    get:
+      operationId: checkout_session_consume_preview
+      parameters:
+      - in: path
+        name: business_id
+        schema:
+          type: integer
+        required: true
+      - in: path
+        name: token
+        schema:
+          type: string
+        required: true
+      tags:
+      - checkout
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckoutSessionPreviewResponse'
+              examples:
+                StandardErrorEnvelope:
+                  value:
+                    ok: false
+                    error:
+                      code: ValidationError
+                      message:
+                        amount:
+                        - Ensure this value is greater than or equal to 1.
+                      request_id: 9b6b2d4cc92f44a28e3a5d2c7d92b001
+                  summary: Standard error envelope
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorEnvelope'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorEnvelope'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorEnvelope'
+          description: ''
+        '410':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorEnvelope'
+          description: ''
+  /api/v1/businesses/{business_id}/media/:
+    get:
+      operationId: api_v1_businesses_media_list
+      parameters:
+      - in: path
+        name: business_id
+        schema:
+          type: integer
+        required: true
+      - name: ordering
+        required: false
+        in: query
+        description: Sonuçların sıralanmasında kullanılacak alan.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: Sayfalanmış sonuç kümesinde bir sayfa numarası.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Her sayfada döndürülecek sonuç sayısı.
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: Bir arama terimi.
+        schema:
+          type: string
+      tags:
+      - api
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedMediaAssetList'
+          description: ''
+    post:
+      operationId: api_v1_businesses_media_create
+      parameters:
+      - in: path
+        name: business_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - api
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BusinessMediaAssetWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BusinessMediaAssetWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BusinessMediaAssetWriteRequest'
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessMediaAssetWrite'
+          description: ''
+  /api/v1/businesses/{business_id}/media/{media_asset_id}/:
+    get:
+      operationId: api_v1_businesses_media_retrieve
+      parameters:
+      - in: path
+        name: business_id
+        schema:
+          type: integer
+        required: true
+      - in: path
+        name: media_asset_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - api
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaAsset'
+          description: ''
+    put:
+      operationId: api_v1_businesses_media_update
+      parameters:
+      - in: path
+        name: business_id
+        schema:
+          type: integer
+        required: true
+      - in: path
+        name: media_asset_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - api
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BusinessMediaAssetWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BusinessMediaAssetWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BusinessMediaAssetWriteRequest'
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessMediaAssetWrite'
+          description: ''
+    patch:
+      operationId: api_v1_businesses_media_partial_update
+      parameters:
+      - in: path
+        name: business_id
+        schema:
+          type: integer
+        required: true
+      - in: path
+        name: media_asset_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - api
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedBusinessMediaAssetWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedBusinessMediaAssetWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedBusinessMediaAssetWriteRequest'
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessMediaAssetWrite'
+          description: ''
+    delete:
+      operationId: api_v1_businesses_media_destroy
+      parameters:
+      - in: path
+        name: business_id
+        schema:
+          type: integer
+        required: true
+      - in: path
+        name: media_asset_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - api
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/businesses/{business_id}/menu-items/:
+    get:
+      operationId: api_v1_businesses_menu_items_list
+      parameters:
+      - in: path
+        name: business_id
+        schema:
+          type: integer
+        required: true
+      - name: ordering
+        required: false
+        in: query
+        description: Sonuçların sıralanmasında kullanılacak alan.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: Sayfalanmış sonuç kümesinde bir sayfa numarası.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Her sayfada döndürülecek sonuç sayısı.
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: Bir arama terimi.
+        schema:
+          type: string
+      tags:
+      - api
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedBusinessMenuItemList'
+          description: ''
+    post:
+      operationId: api_v1_businesses_menu_items_create
+      parameters:
+      - in: path
+        name: business_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - api
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BusinessMenuItemRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BusinessMenuItemRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BusinessMenuItemRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessMenuItem'
+          description: ''
+  /api/v1/businesses/{business_id}/menu-items/{menu_item_id}/:
+    get:
+      operationId: api_v1_businesses_menu_items_retrieve
+      parameters:
+      - in: path
+        name: business_id
+        schema:
+          type: integer
+        required: true
+      - in: path
+        name: menu_item_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - api
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessMenuItem'
+          description: ''
+    put:
+      operationId: api_v1_businesses_menu_items_update
+      parameters:
+      - in: path
+        name: business_id
+        schema:
+          type: integer
+        required: true
+      - in: path
+        name: menu_item_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - api
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BusinessMenuItemRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BusinessMenuItemRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BusinessMenuItemRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessMenuItem'
+          description: ''
+    patch:
+      operationId: api_v1_businesses_menu_items_partial_update
+      parameters:
+      - in: path
+        name: business_id
+        schema:
+          type: integer
+        required: true
+      - in: path
+        name: menu_item_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - api
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedBusinessMenuItemRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedBusinessMenuItemRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedBusinessMenuItemRequest'
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessMenuItem'
+          description: ''
+    delete:
+      operationId: api_v1_businesses_menu_items_destroy
+      parameters:
+      - in: path
+        name: business_id
+        schema:
+          type: integer
+        required: true
+      - in: path
+        name: menu_item_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - api
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/businesses/{business_id}/offers/:
+    get:
+      operationId: api_v1_businesses_offers_list
+      parameters:
+      - in: path
+        name: business_id
+        schema:
+          type: integer
+        required: true
+      - name: ordering
+        required: false
+        in: query
+        description: Sonuçların sıralanmasında kullanılacak alan.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: Sayfalanmış sonuç kümesinde bir sayfa numarası.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Her sayfada döndürülecek sonuç sayısı.
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: Bir arama terimi.
+        schema:
+          type: string
+      tags:
+      - api
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedBusinessOfferList'
+          description: ''
+    post:
+      operationId: api_v1_businesses_offers_create
+      parameters:
+      - in: path
+        name: business_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - api
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BusinessOfferRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BusinessOfferRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BusinessOfferRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessOffer'
+          description: ''
+  /api/v1/businesses/{business_id}/offers/{offer_id}/:
+    get:
+      operationId: api_v1_businesses_offers_retrieve
+      parameters:
+      - in: path
+        name: business_id
+        schema:
+          type: integer
+        required: true
+      - in: path
+        name: offer_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - api
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessOffer'
+          description: ''
+    put:
+      operationId: api_v1_businesses_offers_update
+      parameters:
+      - in: path
+        name: business_id
+        schema:
+          type: integer
+        required: true
+      - in: path
+        name: offer_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - api
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BusinessOfferRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BusinessOfferRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BusinessOfferRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessOffer'
+          description: ''
+    patch:
+      operationId: api_v1_businesses_offers_partial_update
+      parameters:
+      - in: path
+        name: business_id
+        schema:
+          type: integer
+        required: true
+      - in: path
+        name: offer_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - api
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedBusinessOfferRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedBusinessOfferRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedBusinessOfferRequest'
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessOffer'
+          description: ''
+    delete:
+      operationId: api_v1_businesses_offers_destroy
+      parameters:
+      - in: path
+        name: business_id
+        schema:
+          type: integer
+        required: true
+      - in: path
+        name: offer_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - api
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/businesses/{business_id}/operations/consume-history/:
+    get:
+      operationId: business_consume_history
+      parameters:
+      - in: path
+        name: business_id
+        schema:
+          type: integer
+        required: true
+      - in: query
+        name: checkout_status
+        schema:
+          enum:
+          - PENDING
+          - CONFIRMED
+          - CONSUMED
+          - EXPIRED
+          - CANCELLED
+          type: string
+          minLength: 1
+        description: |-
+          * `PENDING` - PENDING
+          * `CONFIRMED` - CONFIRMED
+          * `CONSUMED` - CONSUMED
+          * `EXPIRED` - EXPIRED
+          * `CANCELLED` - CANCELLED
+      - in: query
+        name: consumed_after
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: consumed_before
+        schema:
+          type: string
+          format: date-time
+      tags:
+      - business-operations
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/businesses/{business_id}/operations/dashboard-summary/:
+    get:
+      operationId: business_dashboard_summary
+      parameters:
+      - in: path
+        name: business_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - business-operations
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/businesses/{business_id}/operations/orders/{order_id}/:
+    get:
+      operationId: business_order_detail
+      parameters:
+      - in: path
+        name: business_id
+        schema:
+          type: integer
+        required: true
+      - in: path
+        name: order_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - business-operations
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/businesses/{business_id}/operations/profile/:
+    get:
+      operationId: business_profile_operations_detail
+      parameters:
+      - in: path
+        name: business_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - business-operations
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+    patch:
+      operationId: business_profile_operations_update
+      parameters:
+      - in: path
+        name: business_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - business-operations
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedBusinessProfileOperationsUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedBusinessProfileOperationsUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedBusinessProfileOperationsUpdateRequest'
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/cart/:
+    get:
+      operationId: cart_detail
+      tags:
+      - cart
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CartDetail'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/cart/checkout-preview/:
+    get:
+      operationId: cart_checkout_preview
+      tags:
+      - cart
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CartDetail'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/cart/clear/:
+    delete:
+      operationId: cart_clear
+      tags:
+      - cart
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CartDetail'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/cart/items/:
+    post:
+      operationId: cart_item_add
+      tags:
+      - cart
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CartItemWriteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CartItemWriteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CartItemWriteRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CartDetail'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/cart/items/{item_id}/:
+    patch:
+      operationId: cart_item_update_quantity
+      parameters:
+      - in: path
+        name: item_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - cart
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedCartItemQuantityUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedCartItemQuantityUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedCartItemQuantityUpdateRequest'
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CartDetail'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+    delete:
+      operationId: cart_item_remove
+      parameters:
+      - in: path
+        name: item_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - cart
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CartDetail'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/catalog/businesses/:
+    get:
+      operationId: catalog_business_list
+      parameters:
+      - in: query
+        name: district
+        schema:
+          enum:
+          - BEYLIKDUZU
+          type: string
+          minLength: 1
+        description: '* `BEYLIKDUZU` - Beylikdüzü'
+      tags:
+      - discovery
+      security:
+      - bearerAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicBusinessListResponse'
+          description: ''
+  /api/v1/catalog/businesses/{business_id}/:
+    get:
+      operationId: catalog_business_detail
+      parameters:
+      - in: path
+        name: business_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - discovery
+      security:
+      - bearerAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicBusinessDetailResponse'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorEnvelope'
+          description: ''
+  /api/v1/catalog/businesses/{business_id}/menu/:
+    get:
+      operationId: catalog_business_menu
+      parameters:
+      - in: path
+        name: business_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - discovery
+      security:
+      - bearerAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicBusinessMenuResponse'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorEnvelope'
+          description: ''
+  /api/v1/checkout-sessions/:
+    post:
+      operationId: checkout_session_create
+      tags:
+      - checkout
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckoutSessionDetail'
+              examples:
+                CheckoutSessionCreated:
+                  value:
+                    id: 321
+                    token: chk_live_token
+                    status: PENDING
+                    amount: 215
+                    subtotal_amount: 200
+                    customer_fee_amount: 15
+                    business_fee_amount: 10
+                    business_net_amount: 190
+                    platform_total_fee_amount: 25
+                    item_count: 2
+                    currency: TRY
+                    expires_at: '2026-04-02T13:00:00+03:00'
+                    business:
+                      id: 8
+                      name: Örnek İşletme
+                    cart:
+                      id: 55
+                    pricing:
+                      fee_model: customer_fee
+                    items:
+                    - menu_item_id: 34
+                      menu_item_name: Mercimek Çorbası
+                      quantity: 2
+                      unit_price_amount: 100
+                      line_total_amount: 200
+                      sort_order: 1
+                  summary: Checkout session created
+                StandardErrorEnvelope:
+                  value:
+                    ok: false
+                    error:
+                      code: ValidationError
+                      message:
+                        amount:
+                        - Ensure this value is greater than or equal to 1.
+                      request_id: 9b6b2d4cc92f44a28e3a5d2c7d92b001
+                  summary: Standard error envelope
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorEnvelope'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorEnvelope'
+          description: ''
+  /api/v1/checkout-sessions/{token}/:
+    get:
+      operationId: checkout_session_detail
+      parameters:
+      - in: path
+        name: token
+        schema:
+          type: string
+        required: true
+      tags:
+      - checkout
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckoutSessionDetail'
+              examples:
+                StandardErrorEnvelope:
+                  value:
+                    ok: false
+                    error:
+                      code: ValidationError
+                      message:
+                        amount:
+                        - Ensure this value is greater than or equal to 1.
+                      request_id: 9b6b2d4cc92f44a28e3a5d2c7d92b001
+                  summary: Standard error envelope
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorEnvelope'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorEnvelope'
+          description: ''
+        '410':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorEnvelope'
+          description: ''
+  /api/v1/discovery/categories/:
+    get:
+      operationId: discovery_category_list
+      parameters:
+      - in: query
+        name: district
+        schema:
+          enum:
+          - BEYLIKDUZU
+          type: string
+          default: BEYLIKDUZU
+          minLength: 1
+        description: '* `BEYLIKDUZU` - Beylikdüzü'
+      tags:
+      - discovery
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiscoveryCategoryListResponse'
+          description: ''
+  /api/v1/discovery/categories/{category_slug}/businesses/:
+    get:
+      operationId: discovery_category_business_list
+      parameters:
+      - in: path
+        name: category_slug
+        schema:
+          type: string
+        required: true
+      - in: query
+        name: district
+        schema:
+          enum:
+          - BEYLIKDUZU
+          type: string
+          default: BEYLIKDUZU
+          minLength: 1
+        description: '* `BEYLIKDUZU` - Beylikdüzü'
+      - in: query
+        name: featured_first
+        schema:
+          type: boolean
+          default: true
+      - in: query
+        name: listing_type
+        schema:
+          enum:
+          - CONTRACTED
+          - VOLUNTEER
+          type: string
+          minLength: 1
+        description: |-
+          * `CONTRACTED` - Contracted
+          * `VOLUNTEER` - Volunteer
+      - name: ordering
+        required: false
+        in: query
+        description: Sonuçların sıralanmasında kullanılacak alan.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: Sayfalanmış sonuç kümesinde bir sayfa numarası.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Her sayfada döndürülecek sonuç sayısı.
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: Bir arama terimi.
+        schema:
+          type: string
+      tags:
+      - discovery
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedDiscoveryBusinessCardList'
+          description: ''
+  /api/v1/discovery/home/:
+    get:
+      operationId: discovery_home
+      parameters:
+      - in: query
+        name: district
+        schema:
+          enum:
+          - BEYLIKDUZU
+          type: string
+          default: BEYLIKDUZU
+          minLength: 1
+        description: '* `BEYLIKDUZU` - Beylikdüzü'
+      tags:
+      - discovery
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiscoveryHomeResponse'
+          description: ''
+  /api/v1/notifications/:
+    get:
+      operationId: notification_list
+      parameters:
+      - name: ordering
+        required: false
+        in: query
+        description: Sonuçların sıralanmasında kullanılacak alan.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: Sayfalanmış sonuç kümesinde bir sayfa numarası.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Her sayfada döndürülecek sonuç sayısı.
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: Bir arama terimi.
+        schema:
+          type: string
+      tags:
+      - notifications
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedNotificationList'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorEnvelope'
+          description: ''
+  /api/v1/notifications/admin/broadcast/:
+    post:
+      operationId: notification_admin_broadcast
+      tags:
+      - notifications
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminBroadcastRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AdminBroadcastRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AdminBroadcastRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BroadcastQueued'
+              examples:
+                BroadcastQueued:
+                  value:
+                    queued: 124
+                  summary: Broadcast queued
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorEnvelope'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorEnvelope'
+          description: ''
+  /api/v1/notifications/devices/:
+    post:
+      operationId: notification_device_upsert
+      tags:
+      - notifications
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceUpsertRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DeviceUpsertRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DeviceUpsertRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceUpsertResponse'
+              examples:
+                DeviceReadinessResponse:
+                  value:
+                    id: 22
+                    platform: ANDROID
+                    permission_granted: true
+                    is_active: true
+                    token_rotated_deactivated_count: 0
+                    notification_readiness:
+                      notification_ready: true
+                      active_device_count: 1
+                      message: ready
+                  summary: Device readiness response
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorEnvelope'
+          description: ''
+  /api/v1/notifications/readiness/:
+    get:
+      operationId: notification_readiness
+      tags:
+      - notifications
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationReadiness'
+              examples:
+                NotificationReadiness:
+                  value:
+                    notification_ready: true
+                    active_device_count: 1
+                    message: ready
+                  summary: Notification readiness
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorEnvelope'
+          description: ''
+  /api/v1/ops/businesses/:
+    get:
+      operationId: ops_businesses_list
+      parameters:
+      - in: query
+        name: district
+        schema:
+          enum:
+          - BEYLIKDUZU
+          type: string
+          minLength: 1
+        description: '* `BEYLIKDUZU` - Beylikdüzü'
+      - in: query
+        name: is_active
+        schema:
+          type: boolean
+      - in: query
+        name: is_approved
+        schema:
+          type: boolean
+      - in: query
+        name: is_listed
+        schema:
+          type: boolean
+      - in: query
+        name: payout_onboarding_status
+        schema:
+          enum:
+          - NONE
+          - PENDING
+          - APPROVED
+          - REJECTED
+          - NEEDS_REVIEW
+          type: string
+          minLength: 1
+        description: |-
+          * `NONE` - None
+          * `PENDING` - Pending
+          * `APPROVED` - Approved
+          * `REJECTED` - Rejected
+          * `NEEDS_REVIEW` - Needs review
+      - in: query
+        name: q
+        schema:
+          type: string
+          maxLength: 255
+      tags:
+      - ops-businesses
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/ops/businesses/{business_id}/:
+    get:
+      operationId: ops_businesses_detail
+      parameters:
+      - in: path
+        name: business_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - ops-businesses
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/ops/businesses/{business_id}/iyzico/submerchant/:
+    post:
+      operationId: ops_create_submerchant
+      parameters:
+      - in: path
+        name: business_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - ops-businesses
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '422':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/ops/businesses/{business_id}/memberships/:
+    get:
+      operationId: ops_business_membership_list
+      parameters:
+      - in: path
+        name: business_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - ops-businesses
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+    post:
+      operationId: ops_business_membership_upsert
+      parameters:
+      - in: path
+        name: business_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - ops-businesses
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpsBusinessMembershipUpsertRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OpsBusinessMembershipUpsertRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OpsBusinessMembershipUpsertRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/ops/businesses/{business_id}/memberships/deactivate/:
+    post:
+      operationId: ops_business_membership_deactivate
+      parameters:
+      - in: path
+        name: business_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - ops-businesses
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpsBusinessMembershipDeactivateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OpsBusinessMembershipDeactivateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OpsBusinessMembershipDeactivateRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/ops/businesses/{business_id}/status/:
+    patch:
+      operationId: ops_business_status_update
+      parameters:
+      - in: path
+        name: business_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - ops-businesses
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedOpsBusinessStatusUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedOpsBusinessStatusUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedOpsBusinessStatusUpdateRequest'
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/ops/dashboard/:
+    get:
+      operationId: ops_payout_dashboard
+      tags:
+      - ops-payouts
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/ops/metrics/:
+    get:
+      operationId: ops_payout_metrics
+      tags:
+      - ops-payouts
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/ops/payouts/:
+    get:
+      operationId: ops_payouts_list
+      tags:
+      - ops-payouts
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/ops/payouts/{payout_id}/:
+    get:
+      operationId: ops_payouts_detail
+      parameters:
+      - in: path
+        name: payout_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - ops-payouts
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/ops/payouts/{payout_id}/confirm/:
+    post:
+      operationId: ops_payout_confirm
+      parameters:
+      - in: path
+        name: payout_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - ops-payouts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: {}
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: {}
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: {}
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/ops/payouts/dispatch-due/:
+    post:
+      operationId: ops_payout_dispatch_due
+      tags:
+      - ops-payouts
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: {}
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: {}
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: {}
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/ops/reconcile/business/{business_id}/:
+    get:
+      operationId: ops_reconcile_business
+      parameters:
+      - in: path
+        name: business_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - ops-payouts
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/orders/:
+    get:
+      operationId: order_list
+      description: |-
+        - CUSTOMER: sadece kendi order'larını listeler/görür
+        - BUSINESS MEMBER: üyeliği olduğu işletmelerin order'larını listeler/görür
+        - ADMIN: tümünü görebilir
+      parameters:
+      - in: query
+        name: business
+        schema:
+          type: integer
+      - in: query
+        name: checkout_session
+        schema:
+          type: integer
+      - in: query
+        name: order_items__menu_item
+        schema:
+          type: integer
+      - name: ordering
+        required: false
+        in: query
+        description: Sonuçların sıralanmasında kullanılacak alan.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: Sayfalanmış sonuç kümesinde bir sayfa numarası.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Her sayfada döndürülecek sonuç sayısı.
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: Bir arama terimi.
+        schema:
+          type: string
+      - in: query
+        name: status
+        schema:
+          type: string
+          enum:
+          - CANCELLED
+          - CREATED
+          - PAID
+          - USED
+        description: |-
+          * `CREATED` - Created
+          * `PAID` - Paid
+          * `USED` - Used
+          * `CANCELLED` - Cancelled
+      - in: query
+        name: user
+        schema:
+          type: integer
+      tags:
+      - orders
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedOrderList'
+              examples:
+                OrderListItem:
+                  value:
+                    count: 123
+                    next: http://api.example.org/accounts/?page=4
+                    previous: http://api.example.org/accounts/?page=2
+                    results:
+                    - id: 987
+                      user: 12
+                      user_username: g_113355
+                      business: 8
+                      business_name: Örnek İşletme
+                      checkout_session_id: 321
+                      cart_id: 55
+                      amount: 215
+                      subtotal_amount: 200
+                      customer_fee_amount: 15
+                      business_fee_amount: 10
+                      total_charged_amount: 215
+                      business_net_amount: 190
+                      item_count: 2
+                      status: USED
+                      paid_at: '2026-04-02T12:30:00+03:00'
+                      used_at: '2026-04-02T12:35:00+03:00'
+                      expires_at: '2026-04-03T12:30:00+03:00'
+                      created_at: '2026-04-02T12:30:00+03:00'
+                      pricing:
+                        fee_model: customer_fee
+                      source:
+                        contract: cart_checkout_qr_order
+                        cart_id: 55
+                        checkout_session_id: 321
+                      order_items: []
+                  summary: Order list item
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorEnvelope'
+          description: ''
+  /api/v1/orders/{id}/:
+    get:
+      operationId: order_detail
+      description: |-
+        - CUSTOMER: sadece kendi order'larını listeler/görür
+        - BUSINESS MEMBER: üyeliği olduğu işletmelerin order'larını listeler/görür
+        - ADMIN: tümünü görebilir
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Bir order öğesini tanımlayan benzersiz tamsayı değeri.
+        required: true
+      tags:
+      - orders
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorEnvelope'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorEnvelope'
+          description: ''
+  /api/v1/payments/intents/{intent_id}/:
+    get:
+      operationId: payment_intent_detail
+      parameters:
+      - in: path
+        name: intent_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - payments
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentIntent'
+              examples:
+                TopupIntentCreated:
+                  value:
+                    id: 77
+                    amount: 500
+                    status: PENDING
+                    conversation_id: HY-PI-77
+                    checkout_url: https://sandbox-iyzico.example/checkout/abc
+                    provider: iyzico
+                    created_at: '2026-04-02T12:00:00+03:00'
+                  summary: Topup intent created
+                StandardErrorEnvelope:
+                  value:
+                    ok: false
+                    error:
+                      code: ValidationError
+                      message:
+                        amount:
+                        - Ensure this value is greater than or equal to 1.
+                      request_id: 9b6b2d4cc92f44a28e3a5d2c7d92b001
+                  summary: Standard error envelope
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorEnvelope'
+          description: ''
+  /api/v1/payments/ops/chargebacks/:
+    post:
+      operationId: ops_chargeback
+      tags:
+      - ops-payments
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpsChargebackRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OpsChargebackRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OpsChargebackRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/payments/ops/intents/{intent_id}/topup-reversal/:
+    post:
+      operationId: ops_topup_reversal
+      parameters:
+      - in: path
+        name: intent_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - ops-payments
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpsTopupReversalRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OpsTopupReversalRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OpsTopupReversalRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/payments/ops/orders/{order_id}/refund/:
+    post:
+      operationId: ops_order_refund
+      parameters:
+      - in: path
+        name: order_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - ops-payments
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpsOrderRefundRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OpsOrderRefundRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OpsOrderRefundRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/payments/ops/reversals/:
+    get:
+      operationId: ops_payment_reversal_list
+      tags:
+      - ops-payments
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/payments/ops/reversals/{reversal_id}/resolve/:
+    post:
+      operationId: ops_payment_reversal_resolve
+      parameters:
+      - in: path
+        name: reversal_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - ops-payments
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpsReversalResolveRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OpsReversalResolveRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OpsReversalResolveRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/payments/ops/settlement/dashboard/:
+    get:
+      operationId: ops_settlement_dashboard
+      tags:
+      - ops-settlement
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/payments/ops/settlement/imports/:
+    get:
+      operationId: ops_settlement_import_list
+      tags:
+      - ops-settlement
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/payments/ops/settlement/imports/{import_id}/:
+    get:
+      operationId: ops_settlement_import_detail
+      parameters:
+      - in: path
+        name: import_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - ops-settlement
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/payments/ops/settlement/imports/{import_id}/retry/:
+    post:
+      operationId: ops_settlement_import_retry
+      parameters:
+      - in: path
+        name: import_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - ops-settlement
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/payments/ops/settlement/imports/upload/:
+    post:
+      operationId: ops_settlement_import_upload
+      tags:
+      - ops-settlement
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SettlementImportUploadRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SettlementImportUploadRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SettlementImportUploadRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/payments/ops/settlement/records/:
+    get:
+      operationId: ops_settlement_record_list
+      tags:
+      - ops-settlement
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/payments/ops/settlement/records/{record_id}/:
+    get:
+      operationId: ops_settlement_record_detail
+      parameters:
+      - in: path
+        name: record_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - ops-settlement
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/payments/ops/settlement/records/{record_id}/reprocess/:
+    post:
+      operationId: ops_settlement_record_reprocess
+      parameters:
+      - in: path
+        name: record_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - ops-settlement
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/payments/ops/settlement/records/{record_id}/review/:
+    patch:
+      operationId: ops_settlement_record_review
+      parameters:
+      - in: path
+        name: record_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - ops-settlement
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedSettlementRecordReviewRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedSettlementRecordReviewRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedSettlementRecordReviewRequest'
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/payments/topup/callback/iyzico/:
+    post:
+      operationId: payment_iyzico_topup_callback
+      tags:
+      - payments
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IyzicoTopupCallbackRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/IyzicoTopupCallbackRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/IyzicoTopupCallbackRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorEnvelope'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorEnvelope'
+          description: ''
+        '502':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorEnvelope'
+          description: ''
+  /api/v1/payments/topup/intents/:
+    post:
+      operationId: payment_topup_intent_create
+      tags:
+      - payments
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TopupPaymentIntentCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TopupPaymentIntentCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TopupPaymentIntentCreateRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentIntent'
+              examples:
+                TopupIntentCreated:
+                  value:
+                    id: 77
+                    amount: 500
+                    status: PENDING
+                    conversation_id: HY-PI-77
+                    checkout_url: https://sandbox-iyzico.example/checkout/abc
+                    provider: iyzico
+                    created_at: '2026-04-02T12:00:00+03:00'
+                  summary: Topup intent created
+                StandardErrorEnvelope:
+                  value:
+                    ok: false
+                    error:
+                      code: ValidationError
+                      message:
+                        amount:
+                        - Ensure this value is greater than or equal to 1.
+                      request_id: 9b6b2d4cc92f44a28e3a5d2c7d92b001
+                  summary: Standard error envelope
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorEnvelope'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorEnvelope'
+          description: ''
+  /api/v1/wallet/:
+    get:
+      operationId: wallet_detail
+      tags:
+      - wallet
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Wallet'
+              examples:
+                WalletDetail:
+                  value:
+                    user_id: 12
+                    balance: 900
+                    pending_balance: 0
+                    is_active: true
+                    ledger_in_sync: true
+                    pending_ledger_in_sync: true
+                    created_at: '2026-04-02T11:00:00+03:00'
+                    updated_at: '2026-04-02T12:00:00+03:00'
+                  summary: Wallet detail
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorEnvelope'
+          description: ''
+  /api/v1/wallet/pending-transactions/:
+    get:
+      operationId: wallet_pending_transaction_list
+      parameters:
+      - name: ordering
+        required: false
+        in: query
+        description: Sonuçların sıralanmasında kullanılacak alan.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: Sayfalanmış sonuç kümesinde bir sayfa numarası.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Her sayfada döndürülecek sonuç sayısı.
+        schema:
+          type: integer
+      - in: query
+        name: payment_intent_id
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: Bir arama terimi.
+        schema:
+          type: string
+      - in: query
+        name: type
+        schema:
+          type: string
+          minLength: 1
+      tags:
+      - wallet
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedPendingWalletTransactionList'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorEnvelope'
+          description: ''
+  /api/v1/wallet/transactions/:
+    get:
+      operationId: wallet_transaction_list
+      parameters:
+      - in: query
+        name: order_id
+        schema:
+          type: integer
+      - name: ordering
+        required: false
+        in: query
+        description: Sonuçların sıralanmasında kullanılacak alan.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: Sayfalanmış sonuç kümesinde bir sayfa numarası.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Her sayfada döndürülecek sonuç sayısı.
+        schema:
+          type: integer
+      - in: query
+        name: payment_intent_id
+        schema:
+          type: integer
+      - name: search
+        required: false
+        in: query
+        description: Bir arama terimi.
+        schema:
+          type: string
+      - in: query
+        name: type
+        schema:
+          type: string
+          minLength: 1
+      tags:
+      - wallet
+      security:
+      - jwtAuth: []
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedWalletTransactionList'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorEnvelope'
+          description: ''
+components:
+  schemas:
+    AdminBroadcastRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+        body:
+          type: string
+          minLength: 1
+          maxLength: 240
+        payload: {}
+        audience:
+          allOf:
+          - $ref: '#/components/schemas/AudienceEnum'
+          default: ALL
+        district:
+          type: string
+      required:
+      - body
+      - title
+    ApiErrorBody:
+      type: object
+      properties:
+        code:
+          type: string
+        message: {}
+        request_id:
+          type: string
+        details: {}
+        reason:
+          type: string
+      required:
+      - code
+      - message
+      - request_id
+    ApiErrorEnvelope:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          default: false
+        error:
+          $ref: '#/components/schemas/ApiErrorBody'
+      required:
+      - error
+    AssetRoleEnum:
+      enum:
+      - GALLERY
+      - COVER
+      - LOGO
+      - THUMBNAIL
+      type: string
+      description: |-
+        * `GALLERY` - Gallery
+        * `COVER` - Cover
+        * `LOGO` - Logo
+        * `THUMBNAIL` - Thumbnail
+    AudienceEnum:
+      enum:
+      - ALL
+      - CUSTOMERS
+      - BUSINESS_MEMBERS
+      type: string
+      description: |-
+        * `ALL` - All
+        * `CUSTOMERS` - Customers
+        * `BUSINESS_MEMBERS` - Business Members
+    BroadcastQueued:
+      type: object
+      properties:
+        queued:
+          type: integer
+      required:
+      - queued
+    BusinessCategory:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+          maxLength: 120
+        description:
+          type: string
+        sort_order:
+          type: integer
+        is_active:
+          type: boolean
+        is_visible:
+          type: boolean
+        public_menu_item_count:
+          type: integer
+          readOnly: true
+      required:
+      - id
+      - name
+      - public_menu_item_count
+    BusinessCategoryRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        description:
+          type: string
+        sort_order:
+          type: integer
+        is_active:
+          type: boolean
+        is_visible:
+          type: boolean
+      required:
+      - name
+    BusinessMediaAssetWrite:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        menu_item:
+          type: integer
+          nullable: true
+        marketplace_category:
+          type: integer
+          nullable: true
+        offer:
+          type: integer
+          nullable: true
+        file_url:
+          type: string
+          format: uri
+          maxLength: 200
+        file_path:
+          type: string
+          maxLength: 512
+        media_type:
+          $ref: '#/components/schemas/MediaTypeEnum'
+        asset_role:
+          $ref: '#/components/schemas/AssetRoleEnum'
+        alt_text:
+          type: string
+          maxLength: 255
+        sort_order:
+          type: integer
+        is_active:
+          type: boolean
+        metadata: {}
+      required:
+      - id
+    BusinessMediaAssetWriteRequest:
+      type: object
+      properties:
+        menu_item:
+          type: integer
+          nullable: true
+        marketplace_category:
+          type: integer
+          nullable: true
+        offer:
+          type: integer
+          nullable: true
+        file_url:
+          type: string
+          format: uri
+          maxLength: 200
+        file_path:
+          type: string
+          maxLength: 512
+        media_type:
+          $ref: '#/components/schemas/MediaTypeEnum'
+        asset_role:
+          $ref: '#/components/schemas/AssetRoleEnum'
+        alt_text:
+          type: string
+          maxLength: 255
+        sort_order:
+          type: integer
+        is_active:
+          type: boolean
+        metadata: {}
+    BusinessMenuItem:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        category:
+          type: integer
+        category_name:
+          type: string
+          readOnly: true
+        name:
+          type: string
+          maxLength: 160
+        slug:
+          type: string
+          maxLength: 180
+          pattern: ^[-a-zA-Z0-9_]+$
+        description:
+          type: string
+        price_amount:
+          type: integer
+        image_url:
+          type: string
+          format: uri
+          maxLength: 200
+        sort_order:
+          type: integer
+        is_active:
+          type: boolean
+        is_visible:
+          type: boolean
+        is_available:
+          type: boolean
+      required:
+      - category
+      - category_name
+      - id
+      - name
+      - price_amount
+    BusinessMenuItemRequest:
+      type: object
+      properties:
+        category:
+          type: integer
+        name:
+          type: string
+          minLength: 1
+          maxLength: 160
+        slug:
+          type: string
+          maxLength: 180
+          pattern: ^[-a-zA-Z0-9_]+$
+        description:
+          type: string
+        price_amount:
+          type: integer
+        image_url:
+          type: string
+          format: uri
+          maxLength: 200
+        sort_order:
+          type: integer
+        is_active:
+          type: boolean
+        is_visible:
+          type: boolean
+        is_available:
+          type: boolean
+      required:
+      - category
+      - name
+      - price_amount
+    BusinessOffer:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        business:
+          type: integer
+          readOnly: true
+        menu_item:
+          type: integer
+          nullable: true
+        title:
+          type: string
+          maxLength: 160
+        short_description:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+        label:
+          type: string
+          maxLength: 64
+        tag:
+          type: string
+          maxLength: 64
+        offer_price_amount:
+          type: integer
+          description: Kuruş cinsinden kampanya fiyatı
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+        is_active:
+          type: boolean
+        is_featured:
+          type: boolean
+        daily_limit:
+          type: integer
+          nullable: true
+        sort_order:
+          type: integer
+      required:
+      - business
+      - ends_at
+      - id
+      - offer_price_amount
+      - starts_at
+      - title
+    BusinessOfferRequest:
+      type: object
+      properties:
+        menu_item:
+          type: integer
+          nullable: true
+        title:
+          type: string
+          minLength: 1
+          maxLength: 160
+        short_description:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+        label:
+          type: string
+          maxLength: 64
+        tag:
+          type: string
+          maxLength: 64
+        offer_price_amount:
+          type: integer
+          description: Kuruş cinsinden kampanya fiyatı
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+        is_active:
+          type: boolean
+        is_featured:
+          type: boolean
+        daily_limit:
+          type: integer
+          nullable: true
+        sort_order:
+          type: integer
+      required:
+      - ends_at
+      - offer_price_amount
+      - starts_at
+      - title
+    CartDetail:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        status:
+          $ref: '#/components/schemas/CartDetailStatusEnum'
+        business:
+          type: integer
+        subtotal_amount:
+          type: integer
+        customer_fee_amount:
+          type: integer
+        total_amount:
+          type: integer
+        currency:
+          type: string
+          maxLength: 8
+        item_count:
+          type: integer
+          readOnly: true
+        pricing:
+          type: object
+          additionalProperties: {}
+          readOnly: true
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - business
+      - id
+      - item_count
+      - items
+      - pricing
+      - updated_at
+    CartDetailStatusEnum:
+      enum:
+      - ACTIVE
+      - CHECKED_OUT
+      - ABANDONED
+      - CONVERTED
+      type: string
+      description: |-
+        * `ACTIVE` - Active
+        * `CHECKED_OUT` - Checked out
+        * `ABANDONED` - Abandoned
+        * `CONVERTED` - Converted
+    CartItemWriteRequest:
+      type: object
+      properties:
+        menu_item_id:
+          type: integer
+          minimum: 1
+        quantity:
+          type: integer
+          minimum: 1
+          default: 1
+      required:
+      - menu_item_id
+    CheckoutConsumeResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        order_id:
+          type: integer
+        amount:
+          type: integer
+          description: Deprecated mirror of total_charged_amount.
+        total_charged_amount:
+          type: integer
+        checkout_session_id:
+          type: integer
+      required:
+      - amount
+      - checkout_session_id
+      - order_id
+      - status
+      - total_charged_amount
+    CheckoutSessionBusiness:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+      required:
+      - id
+      - name
+    CheckoutSessionDetail:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        token:
+          type: string
+          maxLength: 64
+        status:
+          $ref: '#/components/schemas/CheckoutSessionDetailStatusEnum'
+        amount:
+          type: integer
+          readOnly: true
+          description: Deprecated mirror of total_payable_amount. Frontend must use
+            total_payable_amount.
+        total_payable_amount:
+          type: integer
+          readOnly: true
+        subtotal_amount:
+          type: integer
+        customer_fee_amount:
+          type: integer
+        business_fee_amount:
+          type: integer
+        business_net_amount:
+          type: integer
+        platform_total_fee_amount:
+          type: integer
+        item_count:
+          type: integer
+        currency:
+          type: string
+          maxLength: 8
+        expires_at:
+          type: string
+          format: date-time
+        business:
+          type: object
+          additionalProperties: {}
+          readOnly: true
+        cart:
+          type: object
+          additionalProperties: {}
+          readOnly: true
+        pricing:
+          type: object
+          additionalProperties: {}
+          readOnly: true
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
+          readOnly: true
+      required:
+      - amount
+      - business
+      - cart
+      - expires_at
+      - id
+      - items
+      - pricing
+      - token
+      - total_payable_amount
+    CheckoutSessionDetailStatusEnum:
+      enum:
+      - PENDING
+      - CONFIRMED
+      - CONSUMED
+      - EXPIRED
+      - CANCELLED
+      type: string
+      description: |-
+        * `PENDING` - Pending
+        * `CONFIRMED` - Confirmed
+        * `CONSUMED` - Consumed
+        * `EXPIRED` - Expired
+        * `CANCELLED` - Cancelled
+    CheckoutSessionPreviewResponse:
+      type: object
+      properties:
+        checkout_session_id:
+          type: integer
+        token:
+          type: string
+        status:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        amount:
+          type: integer
+          description: Deprecated mirror of total_payable_amount.
+        total_payable_amount:
+          type: integer
+        item_count:
+          type: integer
+        business:
+          $ref: '#/components/schemas/CheckoutSessionBusiness'
+        can_consume:
+          type: boolean
+        failure_reason:
+          type: string
+        existing_order_id:
+          type: integer
+          nullable: true
+      required:
+      - amount
+      - business
+      - can_consume
+      - checkout_session_id
+      - existing_order_id
+      - expires_at
+      - failure_reason
+      - item_count
+      - status
+      - token
+      - total_payable_amount
+    DeviceUpsertRequest:
+      type: object
+      properties:
+        platform:
+          $ref: '#/components/schemas/PlatformEnum'
+        fcm_token:
+          type: string
+          minLength: 1
+          maxLength: 255
+        device_id:
+          type: string
+          default: ''
+        app_version:
+          type: string
+          default: ''
+        permission_granted:
+          type: boolean
+      required:
+      - fcm_token
+      - permission_granted
+      - platform
+    DeviceUpsertResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        platform:
+          $ref: '#/components/schemas/PlatformEnum'
+        permission_granted:
+          type: boolean
+        is_active:
+          type: boolean
+        token_rotated_deactivated_count:
+          type: integer
+        notification_readiness:
+          $ref: '#/components/schemas/NotificationReadiness'
+      required:
+      - id
+      - is_active
+      - notification_readiness
+      - permission_granted
+      - platform
+      - token_rotated_deactivated_count
+    DiscoveryActiveCartSummary:
+      type: object
+      properties:
+        cart_id:
+          type: integer
+        business_id:
+          type: integer
+        business_name:
+          type: string
+        item_count:
+          type: integer
+        subtotal_amount:
+          type: integer
+        customer_fee_amount:
+          type: integer
+        total_amount:
+          type: integer
+      required:
+      - business_id
+      - business_name
+      - cart_id
+      - customer_fee_amount
+      - item_count
+      - subtotal_amount
+      - total_amount
+    DiscoveryBusinessCard:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        business_name:
+          type: string
+          maxLength: 255
+        district:
+          $ref: '#/components/schemas/DistrictEnum'
+        district_label:
+          type: string
+          readOnly: true
+        listing_type:
+          $ref: '#/components/schemas/ListingTypeEnum'
+        listing_type_label:
+          type: string
+          readOnly: true
+        is_featured:
+          type: boolean
+        short_description:
+          type: string
+          readOnly: true
+        intro_text:
+          type: string
+          readOnly: true
+        badge_text:
+          type: string
+          readOnly: true
+        cover_image:
+          type: string
+          readOnly: true
+        logo_image:
+          type: string
+          readOnly: true
+        primary_marketplace_category:
+          type: object
+          additionalProperties: {}
+          nullable: true
+          readOnly: true
+        display_priority:
+          type: integer
+      required:
+      - badge_text
+      - business_name
+      - cover_image
+      - district_label
+      - id
+      - intro_text
+      - listing_type_label
+      - logo_image
+      - primary_marketplace_category
+      - short_description
+    DiscoveryCategoryListResponse:
+      type: object
+      properties:
+        district:
+          type: string
+        count:
+          type: integer
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiscoveryMarketplaceCategory'
+      required:
+      - count
+      - district
+      - results
+    DiscoveryHomeResponse:
+      type: object
+      properties:
+        district:
+          $ref: '#/components/schemas/DistrictSummary'
+        categories:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiscoveryMarketplaceCategory'
+        featured_businesses:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiscoveryBusinessCard'
+        other_businesses:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiscoveryBusinessCard'
+        active_offers:
+          type: array
+          items:
+            $ref: '#/components/schemas/PublicOffer'
+        wallet_summary:
+          allOf:
+          - $ref: '#/components/schemas/DiscoveryWalletSummary'
+          nullable: true
+        active_cart_summary:
+          allOf:
+          - $ref: '#/components/schemas/DiscoveryActiveCartSummary'
+          nullable: true
+        notification_readiness:
+          $ref: '#/components/schemas/DiscoveryNotificationReadiness'
+      required:
+      - active_offers
+      - categories
+      - district
+      - featured_businesses
+      - notification_readiness
+      - other_businesses
+    DiscoveryMarketplaceCategory:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        slug:
+          type: string
+          maxLength: 80
+          pattern: ^[-a-zA-Z0-9_]+$
+        name:
+          type: string
+          maxLength: 120
+        description:
+          type: string
+        sort_order:
+          type: integer
+        is_other:
+          type: boolean
+        image:
+          type: string
+          readOnly: true
+      required:
+      - id
+      - image
+      - name
+      - slug
+    DiscoveryNotificationReadiness:
+      type: object
+      properties:
+        notification_ready:
+          type: boolean
+        active_device_count:
+          type: integer
+      required:
+      - active_device_count
+      - notification_ready
+    DiscoveryWalletSummary:
+      type: object
+      properties:
+        balance:
+          type: integer
+        pending_balance:
+          type: integer
+      required:
+      - balance
+      - pending_balance
+    DistrictEnum:
+      enum:
+      - BEYLIKDUZU
+      type: string
+      description: '* `BEYLIKDUZU` - Beylikdüzü'
+    DistrictSummary:
+      type: object
+      properties:
+        code:
+          type: string
+        label:
+          type: string
+      required:
+      - code
+      - label
+    GoogleLoginRequest:
+      type: object
+      properties:
+        id_token:
+          type: string
+          minLength: 1
+      required:
+      - id_token
+    GoogleLoginResponse:
+      type: object
+      properties:
+        id_token:
+          type: string
+        access:
+          type: string
+        refresh:
+          type: string
+        is_new:
+          type: boolean
+        user: {}
+        has_business_membership:
+          type: boolean
+        business_membership_count:
+          type: integer
+        businesses: {}
+      required:
+      - access
+      - business_membership_count
+      - businesses
+      - has_business_membership
+      - id_token
+      - is_new
+      - refresh
+      - user
+    IyzicoTopupCallbackRequest:
+      type: object
+      properties:
+        token:
+          type: string
+          minLength: 1
+          maxLength: 128
+      required:
+      - token
+    ListingTypeEnum:
+      enum:
+      - CONTRACTED
+      - VOLUNTEER
+      type: string
+      description: |-
+        * `CONTRACTED` - Contracted
+        * `VOLUNTEER` - Volunteer
+    MediaAsset:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        business:
+          type: integer
+          nullable: true
+        menu_item:
+          type: integer
+          nullable: true
+        marketplace_category:
+          type: integer
+          nullable: true
+        offer:
+          type: integer
+          nullable: true
+        file_url:
+          type: string
+          format: uri
+          maxLength: 200
+        file_path:
+          type: string
+          maxLength: 512
+        media_type:
+          $ref: '#/components/schemas/MediaTypeEnum'
+        asset_role:
+          $ref: '#/components/schemas/AssetRoleEnum'
+        alt_text:
+          type: string
+          maxLength: 255
+        sort_order:
+          type: integer
+        is_active:
+          type: boolean
+        uploaded_by:
+          type: integer
+          readOnly: true
+          nullable: true
+        metadata: {}
+      required:
+      - id
+      - uploaded_by
+    MediaTypeEnum:
+      enum:
+      - IMAGE
+      - VIDEO
+      - DOCUMENT
+      type: string
+      description: |-
+        * `IMAGE` - Image
+        * `VIDEO` - Video
+        * `DOCUMENT` - Document
+    Notification:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        type:
+          $ref: '#/components/schemas/TypeEnum'
+        title:
+          type: string
+          maxLength: 120
+        body:
+          type: string
+          maxLength: 240
+        payload: {}
+        status:
+          $ref: '#/components/schemas/NotificationStatusEnum'
+        scheduled_at:
+          type: string
+          format: date-time
+          nullable: true
+        sent_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - body
+      - created_at
+      - id
+      - title
+      - type
+    NotificationReadiness:
+      type: object
+      properties:
+        notification_ready:
+          type: boolean
+        active_device_count:
+          type: integer
+        message:
+          type: string
+      required:
+      - active_device_count
+      - notification_ready
+    NotificationStatusEnum:
+      enum:
+      - PENDING
+      - SENT
+      - FAILED
+      - CANCELLED
+      type: string
+      description: |-
+        * `PENDING` - Pending
+        * `SENT` - Sent
+        * `FAILED` - Failed
+        * `CANCELLED` - Cancelled
+    NullEnum:
+      enum:
+      - null
+    OpsBusinessMembershipDeactivateRequest:
+      type: object
+      properties:
+        user_id:
+          type: integer
+      required:
+      - user_id
+    OpsBusinessMembershipUpsertRequest:
+      type: object
+      properties:
+        user_id:
+          type: integer
+        role:
+          $ref: '#/components/schemas/RoleEnum'
+        is_active:
+          type: boolean
+          default: true
+      required:
+      - role
+      - user_id
+    OpsChargebackRequest:
+      type: object
+      properties:
+        idempotency_key:
+          type: string
+          minLength: 1
+          maxLength: 96
+        amount:
+          type: integer
+          minimum: 1
+        note:
+          type: string
+          maxLength: 255
+        source:
+          $ref: '#/components/schemas/SourceEnum'
+        order_id:
+          type: integer
+        payment_intent_id:
+          type: integer
+      required:
+      - amount
+      - idempotency_key
+      - source
+    OpsOrderRefundRequest:
+      type: object
+      properties:
+        idempotency_key:
+          type: string
+          minLength: 1
+          maxLength: 96
+        amount:
+          type: integer
+          minimum: 1
+        reason_code:
+          type: string
+          maxLength: 64
+        note:
+          type: string
+          maxLength: 255
+      required:
+      - amount
+      - idempotency_key
+    OpsReversalResolveRequest:
+      type: object
+      properties:
+        idempotency_key:
+          type: string
+          minLength: 1
+          maxLength: 96
+        note:
+          type: string
+          maxLength: 255
+      required:
+      - idempotency_key
+    OpsTopupReversalRequest:
+      type: object
+      properties:
+        idempotency_key:
+          type: string
+          minLength: 1
+          maxLength: 96
+        amount:
+          type: integer
+          minimum: 1
+        reason_code:
+          type: string
+          maxLength: 64
+        note:
+          type: string
+          maxLength: 255
+      required:
+      - amount
+      - idempotency_key
+    Order:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        user:
+          type: integer
+          readOnly: true
+        user_username:
+          type: string
+          readOnly: true
+        business:
+          type: integer
+          readOnly: true
+        business_name:
+          type: string
+          readOnly: true
+        checkout_session_id:
+          type: integer
+          readOnly: true
+        cart_id:
+          type: integer
+          readOnly: true
+        amount:
+          type: integer
+          readOnly: true
+          description: Deprecated mirror of total_charged_amount. Frontend must use
+            total_charged_amount.
+        subtotal_amount:
+          type: integer
+          readOnly: true
+        customer_fee_amount:
+          type: integer
+          readOnly: true
+        business_fee_amount:
+          type: integer
+          readOnly: true
+        total_charged_amount:
+          type: integer
+          readOnly: true
+        business_net_amount:
+          type: integer
+          readOnly: true
+        item_count:
+          type: integer
+          readOnly: true
+        status:
+          allOf:
+          - $ref: '#/components/schemas/OrderStatusEnum'
+          readOnly: true
+        paid_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        used_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        expires_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        pricing:
+          readOnly: true
+        source:
+          readOnly: true
+        order_items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderItem'
+          readOnly: true
+      required:
+      - amount
+      - business
+      - business_fee_amount
+      - business_name
+      - business_net_amount
+      - cart_id
+      - checkout_session_id
+      - created_at
+      - customer_fee_amount
+      - expires_at
+      - id
+      - item_count
+      - order_items
+      - paid_at
+      - pricing
+      - source
+      - status
+      - subtotal_amount
+      - total_charged_amount
+      - used_at
+      - user
+      - user_username
+    OrderItem:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        menu_item_id:
+          type: integer
+          readOnly: true
+        menu_item_name:
+          type: string
+          maxLength: 160
+        quantity:
+          type: integer
+        unit_price_amount:
+          type: integer
+        line_total_amount:
+          type: integer
+        sort_order:
+          type: integer
+      required:
+      - id
+      - menu_item_id
+      - menu_item_name
+    OrderStatusEnum:
+      enum:
+      - CREATED
+      - PAID
+      - USED
+      - CANCELLED
+      type: string
+      description: |-
+        * `CREATED` - Created
+        * `PAID` - Paid
+        * `USED` - Used
+        * `CANCELLED` - Cancelled
+    PaginatedBusinessCategoryList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/BusinessCategory'
+    PaginatedBusinessMenuItemList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/BusinessMenuItem'
+    PaginatedBusinessOfferList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/BusinessOffer'
+    PaginatedDiscoveryBusinessCardList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiscoveryBusinessCard'
+    PaginatedMediaAssetList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/MediaAsset'
+    PaginatedNotificationList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Notification'
+    PaginatedOrderList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Order'
+    PaginatedPendingWalletTransactionList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/PendingWalletTransaction'
+    PaginatedWalletTransactionList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/WalletTransaction'
+    PatchedBusinessCategoryRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        description:
+          type: string
+        sort_order:
+          type: integer
+        is_active:
+          type: boolean
+        is_visible:
+          type: boolean
+    PatchedBusinessMediaAssetWriteRequest:
+      type: object
+      properties:
+        menu_item:
+          type: integer
+          nullable: true
+        marketplace_category:
+          type: integer
+          nullable: true
+        offer:
+          type: integer
+          nullable: true
+        file_url:
+          type: string
+          format: uri
+          maxLength: 200
+        file_path:
+          type: string
+          maxLength: 512
+        media_type:
+          $ref: '#/components/schemas/MediaTypeEnum'
+        asset_role:
+          $ref: '#/components/schemas/AssetRoleEnum'
+        alt_text:
+          type: string
+          maxLength: 255
+        sort_order:
+          type: integer
+        is_active:
+          type: boolean
+        metadata: {}
+    PatchedBusinessMenuItemRequest:
+      type: object
+      properties:
+        category:
+          type: integer
+        name:
+          type: string
+          minLength: 1
+          maxLength: 160
+        slug:
+          type: string
+          maxLength: 180
+          pattern: ^[-a-zA-Z0-9_]+$
+        description:
+          type: string
+        price_amount:
+          type: integer
+        image_url:
+          type: string
+          format: uri
+          maxLength: 200
+        sort_order:
+          type: integer
+        is_active:
+          type: boolean
+        is_visible:
+          type: boolean
+        is_available:
+          type: boolean
+    PatchedBusinessOfferRequest:
+      type: object
+      properties:
+        menu_item:
+          type: integer
+          nullable: true
+        title:
+          type: string
+          minLength: 1
+          maxLength: 160
+        short_description:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+        label:
+          type: string
+          maxLength: 64
+        tag:
+          type: string
+          maxLength: 64
+        offer_price_amount:
+          type: integer
+          description: Kuruş cinsinden kampanya fiyatı
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+        is_active:
+          type: boolean
+        is_featured:
+          type: boolean
+        daily_limit:
+          type: integer
+          nullable: true
+        sort_order:
+          type: integer
+    PatchedBusinessProfileOperationsUpdateRequest:
+      type: object
+      properties:
+        short_description:
+          type: string
+          maxLength: 280
+        intro_text:
+          type: string
+        badge_text:
+          type: string
+          maxLength: 64
+        marketplace_is_visible:
+          type: boolean
+        listing_type:
+          $ref: '#/components/schemas/ListingTypeEnum'
+        is_featured:
+          type: boolean
+        display_priority:
+          type: integer
+          minimum: 0
+    PatchedCartItemQuantityUpdateRequest:
+      type: object
+      properties:
+        quantity:
+          type: integer
+          minimum: 1
+    PatchedOpsBusinessStatusUpdateRequest:
+      type: object
+      properties:
+        is_active:
+          type: boolean
+        is_approved:
+          type: boolean
+        is_listed:
+          type: boolean
+        listing_type:
+          $ref: '#/components/schemas/ListingTypeEnum'
+        is_featured:
+          type: boolean
+        display_priority:
+          type: integer
+          minimum: 0
+        marketplace_is_visible:
+          type: boolean
+        payout_onboarding_note:
+          type: string
+          maxLength: 255
+    PatchedSettlementRecordReviewRequest:
+      type: object
+      properties:
+        operator_note:
+          type: string
+          maxLength: 2000
+        review_status:
+          $ref: '#/components/schemas/ReviewStatusEnum'
+    PaymentIntent:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        provider:
+          allOf:
+          - $ref: '#/components/schemas/ProviderEnum'
+          readOnly: true
+        purpose:
+          readOnly: true
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/PurposeEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        amount:
+          type: integer
+          readOnly: true
+          description: Kuruş
+        status:
+          allOf:
+          - $ref: '#/components/schemas/PaymentIntentStatusEnum'
+          readOnly: true
+        provider_payment_id:
+          type: string
+          readOnly: true
+          nullable: true
+        provider_session_token:
+          type: string
+          readOnly: true
+        provider_page_url:
+          type: string
+          format: uri
+          readOnly: true
+        normalized_status:
+          type: string
+          readOnly: true
+        is_processed:
+          type: boolean
+          readOnly: true
+        processed_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        is_settled:
+          type: boolean
+          readOnly: true
+        settled_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        marketplace_conversation_id:
+          type: string
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - amount
+      - created_at
+      - id
+      - is_processed
+      - is_settled
+      - marketplace_conversation_id
+      - normalized_status
+      - processed_at
+      - provider
+      - provider_page_url
+      - provider_payment_id
+      - provider_session_token
+      - purpose
+      - settled_at
+      - status
+      - updated_at
+    PaymentIntentStatusEnum:
+      enum:
+      - INITIATED
+      - PAID
+      - FAILED
+      - CANCELLED
+      type: string
+      description: |-
+        * `INITIATED` - Initiated
+        * `PAID` - Paid
+        * `FAILED` - Failed
+        * `CANCELLED` - Cancelled
+    PendingWalletTransaction:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        transaction_type:
+          allOf:
+          - $ref: '#/components/schemas/PendingWalletTransactionTransactionTypeEnum'
+          readOnly: true
+        amount:
+          type: integer
+          readOnly: true
+          description: Signed kuruş. TOPUP_PENDING:+, SETTLEMENT_OUT:-
+        before_pending:
+          type: integer
+          readOnly: true
+        after_pending:
+          type: integer
+          readOnly: true
+        provider_event_id:
+          type: string
+          readOnly: true
+          nullable: true
+        payment_intent_id:
+          type: integer
+          readOnly: true
+          nullable: true
+        description:
+          type: string
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - after_pending
+      - amount
+      - before_pending
+      - created_at
+      - description
+      - id
+      - payment_intent_id
+      - provider_event_id
+      - transaction_type
+    PendingWalletTransactionTransactionTypeEnum:
+      enum:
+      - TOPUP_PENDING
+      - SETTLEMENT_OUT
+      - REVERSAL_OUT
+      type: string
+      description: |-
+        * `TOPUP_PENDING` - Topup Pending
+        * `SETTLEMENT_OUT` - Settlement Out
+        * `REVERSAL_OUT` - Reversal Out
+    PlatformEnum:
+      enum:
+      - ANDROID
+      - IOS
+      - WEB
+      type: string
+      description: |-
+        * `ANDROID` - Android
+        * `IOS` - iOS
+        * `WEB` - Web
+    ProviderEnum:
+      enum:
+      - MOCK
+      - IYZICO
+      type: string
+      description: |-
+        * `MOCK` - Mock
+        * `IYZICO` - Iyzico
+    PublicBusiness:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        business_name:
+          type: string
+          maxLength: 255
+        district:
+          $ref: '#/components/schemas/DistrictEnum'
+        district_label:
+          type: string
+          readOnly: true
+        listing_type:
+          $ref: '#/components/schemas/ListingTypeEnum'
+        listing_type_label:
+          type: string
+          readOnly: true
+        is_featured:
+          type: boolean
+        short_description:
+          type: string
+          readOnly: true
+        intro_text:
+          type: string
+          readOnly: true
+        badge_text:
+          type: string
+          readOnly: true
+        cover_image:
+          type: string
+          readOnly: true
+        logo_image:
+          type: string
+          readOnly: true
+        primary_marketplace_category:
+          type: object
+          additionalProperties: {}
+          nullable: true
+          readOnly: true
+      required:
+      - badge_text
+      - business_name
+      - cover_image
+      - district_label
+      - id
+      - intro_text
+      - listing_type_label
+      - logo_image
+      - primary_marketplace_category
+      - short_description
+    PublicBusinessCategoryOverview:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+      required:
+      - description
+      - id
+      - name
+    PublicBusinessDetailResponse:
+      type: object
+      properties:
+        business:
+          $ref: '#/components/schemas/PublicBusiness'
+        media:
+          type: array
+          items:
+            $ref: '#/components/schemas/PublicMediaAsset'
+        active_offers:
+          type: array
+          items:
+            $ref: '#/components/schemas/PublicOffer'
+        category_overview:
+          type: array
+          items:
+            $ref: '#/components/schemas/PublicBusinessCategoryOverview'
+        server_time:
+          type: string
+          format: date-time
+      required:
+      - active_offers
+      - business
+      - category_overview
+      - media
+      - server_time
+    PublicBusinessListResponse:
+      type: object
+      properties:
+        count:
+          type: integer
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/PublicBusiness'
+      required:
+      - count
+      - results
+    PublicBusinessMenuResponse:
+      type: object
+      properties:
+        business:
+          $ref: '#/components/schemas/PublicBusiness'
+        categories:
+          type: array
+          items:
+            $ref: '#/components/schemas/PublicCategory'
+        active_offers:
+          type: array
+          items:
+            $ref: '#/components/schemas/PublicOffer'
+      required:
+      - active_offers
+      - business
+      - categories
+    PublicCategory:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+          maxLength: 120
+        description:
+          type: string
+        menu_items:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
+          readOnly: true
+      required:
+      - id
+      - menu_items
+      - name
+    PublicMediaAsset:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        media_type:
+          $ref: '#/components/schemas/MediaTypeEnum'
+        asset_role:
+          $ref: '#/components/schemas/AssetRoleEnum'
+        url:
+          type: string
+          readOnly: true
+        alt_text:
+          type: string
+          maxLength: 255
+        sort_order:
+          type: integer
+      required:
+      - id
+      - url
+    PublicOffer:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        title:
+          type: string
+          maxLength: 160
+        short_description:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+        label:
+          type: string
+          maxLength: 64
+        tag:
+          type: string
+          maxLength: 64
+        offer_price_amount:
+          type: integer
+          description: Kuruş cinsinden kampanya fiyatı
+        is_featured:
+          type: boolean
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+        is_live:
+          type: boolean
+          readOnly: true
+        image:
+          type: string
+          readOnly: true
+      required:
+      - ends_at
+      - id
+      - image
+      - is_live
+      - offer_price_amount
+      - starts_at
+      - title
+    PurposeEnum:
+      enum:
+      - TOPUP
+      - CHECKOUT
+      type: string
+      description: |-
+        * `TOPUP` - Topup
+        * `CHECKOUT` - Checkout
+    ReviewStatusEnum:
+      enum:
+      - OPEN
+      - ACKNOWLEDGED
+      - RETRY_SCHEDULED
+      - RESOLVED
+      - IGNORED
+      type: string
+      description: |-
+        * `OPEN` - Open
+        * `ACKNOWLEDGED` - Acknowledged
+        * `RETRY_SCHEDULED` - Retry Scheduled
+        * `RESOLVED` - Resolved
+        * `IGNORED` - Ignored
+    RoleEnum:
+      enum:
+      - OWNER
+      - MANAGER
+      - CASHIER
+      type: string
+      description: |-
+        * `OWNER` - Owner
+        * `MANAGER` - Manager
+        * `CASHIER` - Cashier
+    SettlementImportUploadRequest:
+      type: object
+      properties:
+        file:
+          type: string
+          format: binary
+      required:
+      - file
+    SourceEnum:
+      enum:
+      - payment_intent
+      - order
+      type: string
+      description: |-
+        * `payment_intent` - payment_intent
+        * `order` - order
+    TokenObtainPair:
+      type: object
+      properties:
+        access:
+          type: string
+          readOnly: true
+        refresh:
+          type: string
+          readOnly: true
+      required:
+      - access
+      - refresh
+    TokenObtainPairRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          writeOnly: true
+          minLength: 1
+        password:
+          type: string
+          writeOnly: true
+          minLength: 1
+      required:
+      - password
+      - username
+    TokenRefresh:
+      type: object
+      properties:
+        access:
+          type: string
+          readOnly: true
+        refresh:
+          type: string
+      required:
+      - access
+      - refresh
+    TokenRefreshRequest:
+      type: object
+      properties:
+        refresh:
+          type: string
+          minLength: 1
+      required:
+      - refresh
+    TopupPaymentIntentCreateRequest:
+      type: object
+      properties:
+        amount:
+          type: integer
+          minimum: 1
+      required:
+      - amount
+    TypeEnum:
+      enum:
+      - ORDER_PAID
+      - ORDER_CONSUMED
+      - ORDER_USED
+      - PAYMENT_SETTLED
+      - PAYOUT_SENT
+      - PAYOUT_CONFIRMED
+      - BALANCE_LOW
+      - SYSTEM_BROADCAST
+      type: string
+      description: |-
+        * `ORDER_PAID` - Order Paid
+        * `ORDER_CONSUMED` - Order Consumed
+        * `ORDER_USED` - Order Used
+        * `PAYMENT_SETTLED` - Payment Settled
+        * `PAYOUT_SENT` - Payout Sent
+        * `PAYOUT_CONFIRMED` - Payout Confirmed
+        * `BALANCE_LOW` - Balance Low
+        * `SYSTEM_BROADCAST` - System Broadcast
+    Wallet:
+      type: object
+      properties:
+        user_id:
+          type: integer
+          readOnly: true
+        balance:
+          type: integer
+          readOnly: true
+          description: Kuruş cinsinden kullanılabilir bakiye
+        pending_balance:
+          type: integer
+          readOnly: true
+          description: Kuruş cinsinden settlement bekleyen bakiye
+        is_active:
+          type: boolean
+          readOnly: true
+        restriction_reason:
+          type: string
+          readOnly: true
+        restricted_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        ledger_in_sync:
+          type: boolean
+          readOnly: true
+        pending_ledger_in_sync:
+          type: boolean
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - balance
+      - created_at
+      - is_active
+      - ledger_in_sync
+      - pending_balance
+      - pending_ledger_in_sync
+      - restricted_at
+      - restriction_reason
+      - updated_at
+      - user_id
+    WalletTransaction:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        transaction_type:
+          allOf:
+          - $ref: '#/components/schemas/WalletTransactionTransactionTypeEnum'
+          readOnly: true
+        amount:
+          type: integer
+          readOnly: true
+          description: Kuruş cinsinden signed işlem tutarı
+        before_balance:
+          type: integer
+          readOnly: true
+          description: İşlem öncesi bakiye
+        after_balance:
+          type: integer
+          readOnly: true
+          description: İşlem sonrası bakiye
+        order_id:
+          type: integer
+          readOnly: true
+          nullable: true
+        provider_event_id:
+          type: string
+          readOnly: true
+          nullable: true
+        payment_intent_id:
+          type: integer
+          readOnly: true
+          nullable: true
+        description:
+          type: string
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - after_balance
+      - amount
+      - before_balance
+      - created_at
+      - description
+      - id
+      - order_id
+      - payment_intent_id
+      - provider_event_id
+      - transaction_type
+    WalletTransactionTransactionTypeEnum:
+      enum:
+      - TOP_UP
+      - PURCHASE
+      - REFUND
+      - ADJUSTMENT
+      - REVERSAL
+      - CHARGEBACK
+      type: string
+      description: |-
+        * `TOP_UP` - Top Up
+        * `PURCHASE` - Purchase
+        * `REFUND` - Refund
+        * `ADJUSTMENT` - Adjustment
+        * `REVERSAL` - Reversal
+        * `CHARGEBACK` - Chargeback
+  securitySchemes:
+    jwtAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+tags:
+- name: auth
+  description: Authentication ve JWT token alma yüzeyi.
+- name: discovery
+  description: Public katalog, discovery ve işletme menüsü yüzeyi.
+- name: notifications
+  description: Push device kaydı, readiness ve broadcast yüzeyi.
+- name: cart
+  description: Cart yönetimi ve checkout öncesi preview yüzeyi.
+- name: checkout
+  description: Cart-backed checkout session ve QR consume yüzeyi.
+- name: orders
+  description: Kullanıcının veya business member'ın erişebildiği order kayıtları.
+- name: wallet
+  description: Wallet bakiye ve işlem geçmişi yüzeyi.
+- name: payments
+  description: Topup payment intent ve payment retrieval yüzeyi.
+- name: business-operations
+  description: Business member operasyon ekranları.
+- name: ops-businesses
+  description: Admin business operasyon yüzeyi.
+- name: ops-payments
+  description: Admin refund, reversal ve chargeback yüzeyi.
+- name: ops-settlement
+  description: Admin settlement import ve reconciliation yüzeyi.
+- name: ops-payouts
+  description: Admin payout dispatch, confirm ve reconciliation yüzeyi.

@@ -1,0 +1,194 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: halkyemek
+      POSTGRES_USER: halkyemek
+      POSTGRES_PASSWORD: halkyemek
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  release:
+    build: .
+    entrypoint: []
+    command: /app/scripts/release.sh true
+    env_file:
+      - .env
+    environment:
+      RUN_DB_MIGRATIONS: "1"
+      RUN_COLLECTSTATIC: "1"
+      RUN_FINAL_PREFLIGHT: "1"
+      FINAL_PREFLIGHT_FAIL_ON_LOCK_SKIP: "0"
+      RUN_BOOTSTRAP_MARKETPLACE: "1"
+      BOOTSTRAP_MARKETPLACE_DISTRICT: "BEYLIKDUZU"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: "no"
+
+  web:
+    build: .
+    env_file:
+      - .env
+    environment:
+      RUN_DB_MIGRATIONS: "0"
+      RUN_COLLECTSTATIC: "0"
+      RUN_FINAL_PREFLIGHT: "0"
+      FINAL_PREFLIGHT_FAIL_ON_LOCK_SKIP: "0"
+      RUN_BOOTSTRAP_MARKETPLACE: "0"
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      release:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health/readiness/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  worker-notifications:
+    build: .
+    entrypoint: []
+    command: /app/scripts/run_celery_worker.sh
+    env_file:
+      - .env
+    environment:
+      CELERY_WORKER_NAME: worker-notifications
+      CELERY_WORKER_QUEUES: notifications,default
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      release:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A halkyemekproject inspect ping -d worker-notifications@$$HOSTNAME --timeout=5 | grep -q OK"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
+    restart: unless-stopped
+
+  worker-ops:
+    build: .
+    entrypoint: []
+    command: /app/scripts/run_celery_worker.sh
+    env_file:
+      - .env
+    environment:
+      CELERY_WORKER_NAME: worker-ops
+      CELERY_WORKER_QUEUES: ops,default
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      release:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A halkyemekproject inspect ping -d worker-ops@$$HOSTNAME --timeout=5 | grep -q OK"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
+    restart: unless-stopped
+
+  worker-finance:
+    build: .
+    entrypoint: []
+    command: /app/scripts/run_celery_worker.sh
+    env_file:
+      - .env
+    environment:
+      CELERY_WORKER_NAME: worker-finance
+      CELERY_WORKER_QUEUES: finance,default
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      release:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A halkyemekproject inspect ping -d worker-finance@$$HOSTNAME --timeout=5 | grep -q OK"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
+    restart: unless-stopped
+
+  worker-ops-heavy:
+    build: .
+    entrypoint: []
+    command: /app/scripts/run_celery_worker.sh
+    env_file:
+      - .env
+    environment:
+      CELERY_WORKER_NAME: worker-ops-heavy
+      CELERY_WORKER_QUEUES: ops_heavy,default
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      release:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A halkyemekproject inspect ping -d worker-ops-heavy@$$HOSTNAME --timeout=5 | grep -q OK"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
+    restart: unless-stopped
+
+  beat:
+    build: .
+    entrypoint: []
+    command: /app/scripts/run_celery_beat.sh
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      release:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "python manage.py shell -c \"from django.conf import settings; from health.services import heartbeat_ok, SCHEDULER_HEARTBEAT_NAME; import sys; sys.exit(0 if heartbeat_ok(SCHEDULER_HEARTBEAT_NAME, settings.SCHEDULER_HEARTBEAT_TTL_SECONDS) else 1)\""]
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 90s
+    restart: unless-stopped
+
+volumes:
+  pgdata:

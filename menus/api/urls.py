@@ -1,0 +1,95 @@
+from django.urls import path
+
+from menus.api.views_public import (
+    DiscoveryCategoryBusinessListAPIView,
+    DiscoveryCategoryListAPIView,
+    DiscoveryHomeAPIView,
+    PublicBusinessListAPIView,
+    PublicBusinessDetailAPIView,
+    PublicBusinessMenuAPIView,
+)
+from menus.api.views_business import (
+    BusinessCategoryListCreateAPIView,
+    BusinessCategoryDetailAPIView,
+    BusinessMenuItemListCreateAPIView,
+    BusinessMenuItemDetailAPIView,
+    BusinessOfferListCreateAPIView,
+    BusinessOfferDetailAPIView,
+)
+from menus.api.views_media import (
+    BusinessMediaAssetDetailAPIView,
+    BusinessMediaAssetListCreateAPIView,
+)
+
+urlpatterns = [
+    path(
+        "discovery/home/",
+        DiscoveryHomeAPIView.as_view(),
+        name="discovery-home",
+    ),
+    path(
+        "discovery/categories/",
+        DiscoveryCategoryListAPIView.as_view(),
+        name="discovery-category-list",
+    ),
+    path(
+        "discovery/categories/<slug:category_slug>/businesses/",
+        DiscoveryCategoryBusinessListAPIView.as_view(),
+        name="discovery-category-businesses",
+    ),
+    path(
+        "catalog/businesses/",
+        PublicBusinessListAPIView.as_view(),
+        name="public-business-list",
+    ),
+    path(
+        "catalog/businesses/<int:business_id>/",
+        PublicBusinessDetailAPIView.as_view(),
+        name="public-business-detail",
+    ),
+    path(
+        "catalog/businesses/<int:business_id>/menu/",
+        PublicBusinessMenuAPIView.as_view(),
+        name="public-business-menu",
+    ),
+    path(
+        "businesses/<int:business_id>/categories/",
+        BusinessCategoryListCreateAPIView.as_view(),
+        name="business-category-list-create",
+    ),
+    path(
+        "businesses/<int:business_id>/categories/<int:category_id>/",
+        BusinessCategoryDetailAPIView.as_view(),
+        name="business-category-detail",
+    ),
+    path(
+        "businesses/<int:business_id>/menu-items/",
+        BusinessMenuItemListCreateAPIView.as_view(),
+        name="business-menuitem-list-create",
+    ),
+    path(
+        "businesses/<int:business_id>/menu-items/<int:menu_item_id>/",
+        BusinessMenuItemDetailAPIView.as_view(),
+        name="business-menuitem-detail",
+    ),
+    path(
+        "businesses/<int:business_id>/offers/",
+        BusinessOfferListCreateAPIView.as_view(),
+        name="business-offer-list-create",
+    ),
+    path(
+        "businesses/<int:business_id>/offers/<int:offer_id>/",
+        BusinessOfferDetailAPIView.as_view(),
+        name="business-offer-detail",
+    ),
+    path(
+        "businesses/<int:business_id>/media/",
+        BusinessMediaAssetListCreateAPIView.as_view(),
+        name="business-media-list-create",
+    ),
+    path(
+        "businesses/<int:business_id>/media/<int:media_asset_id>/",
+        BusinessMediaAssetDetailAPIView.as_view(),
+        name="business-media-detail",
+    ),
+]

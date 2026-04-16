@@ -1,0 +1,41 @@
+from django.urls import path
+
+from payments.api.views import (
+    IyzicoTopupCallbackAPIView,
+    MyPaymentIntentDetailAPIView,
+    OpsChargebackAPIView,
+    OpsOrderRefundAPIView,
+    OpsPaymentReversalListAPIView,
+    OpsPaymentReversalResolveAPIView,
+    OpsSettlementDashboardAPIView,
+    OpsSettlementImportDetailAPIView,
+    OpsSettlementImportListAPIView,
+    OpsSettlementImportRetryAPIView,
+    OpsSettlementImportUploadAPIView,
+    OpsSettlementRecordDetailAPIView,
+    OpsSettlementRecordListAPIView,
+    OpsSettlementRecordReprocessAPIView,
+    OpsSettlementRecordReviewAPIView,
+    OpsTopupReversalAPIView,
+    TopupPaymentIntentCreateAPIView,
+)
+
+urlpatterns = [
+    path("topup/intents/", TopupPaymentIntentCreateAPIView.as_view(), name="topup-intent-create"),
+    path("topup/callback/iyzico/", IyzicoTopupCallbackAPIView.as_view(), name="iyzico-topup-callback"),
+    path("intents/<int:intent_id>/", MyPaymentIntentDetailAPIView.as_view(), name="payment-intent-detail"),
+    path("ops/reversals/", OpsPaymentReversalListAPIView.as_view(), name="ops-payment-reversal-list"),
+    path("ops/reversals/<int:reversal_id>/resolve/", OpsPaymentReversalResolveAPIView.as_view(), name="ops-payment-reversal-resolve"),
+    path("ops/orders/<int:order_id>/refund/", OpsOrderRefundAPIView.as_view(), name="ops-order-refund"),
+    path("ops/intents/<int:intent_id>/topup-reversal/", OpsTopupReversalAPIView.as_view(), name="ops-topup-reversal"),
+    path("ops/chargebacks/", OpsChargebackAPIView.as_view(), name="ops-chargeback"),
+    path("ops/settlement/dashboard/", OpsSettlementDashboardAPIView.as_view(), name="ops-settlement-dashboard"),
+    path("ops/settlement/imports/upload/", OpsSettlementImportUploadAPIView.as_view(), name="ops-settlement-import-upload"),
+    path("ops/settlement/imports/", OpsSettlementImportListAPIView.as_view(), name="ops-settlement-import-list"),
+    path("ops/settlement/imports/<int:import_id>/", OpsSettlementImportDetailAPIView.as_view(), name="ops-settlement-import-detail"),
+    path("ops/settlement/imports/<int:import_id>/retry/", OpsSettlementImportRetryAPIView.as_view(), name="ops-settlement-import-retry"),
+    path("ops/settlement/records/", OpsSettlementRecordListAPIView.as_view(), name="ops-settlement-record-list"),
+    path("ops/settlement/records/<int:record_id>/", OpsSettlementRecordDetailAPIView.as_view(), name="ops-settlement-record-detail"),
+    path("ops/settlement/records/<int:record_id>/reprocess/", OpsSettlementRecordReprocessAPIView.as_view(), name="ops-settlement-record-reprocess"),
+    path("ops/settlement/records/<int:record_id>/review/", OpsSettlementRecordReviewAPIView.as_view(), name="ops-settlement-record-review"),
+]

@@ -1,0 +1,27 @@
+from django.db import migrations, models
+
+
+class Migration(migrations.Migration):
+    dependencies = [
+        ("notifications", "0001_initial"),
+    ]
+
+    operations = [
+        migrations.AlterField(
+            model_name="notification",
+            name="type",
+            field=models.CharField(
+                choices=[
+                    ("ORDER_PAID", "Order Paid"),
+                    ("ORDER_CONSUMED", "Order Consumed"),
+                    ("ORDER_USED", "Order Used"),
+                    ("PAYMENT_SETTLED", "Payment Settled"),
+                    ("PAYOUT_SENT", "Payout Sent"),
+                    ("PAYOUT_CONFIRMED", "Payout Confirmed"),
+                    ("BALANCE_LOW", "Balance Low"),
+                    ("SYSTEM_BROADCAST", "System Broadcast"),
+                ],
+                max_length=32,
+            ),
+        ),
+    ]

@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: halkyemek
+          POSTGRES_USER: halkyemek
+          POSTGRES_PASSWORD: halkyemek
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd="pg_isready -U halkyemek -d halkyemek"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    env:
+      DATABASE_URL: postgres://halkyemek:halkyemek@localhost:5432/halkyemek
+      DJANGO_SECRET_KEY: ci-secret
+      DEBUG: "0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - run: python manage.py migrate --noinput
+      - run: python manage.py test

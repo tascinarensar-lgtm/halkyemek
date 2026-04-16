@@ -1,6 +1,10 @@
+import shutil
+import tempfile
 from datetime import timedelta
 
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
+from django.test.utils import override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -12,6 +16,7 @@ from test_support import add_membership, create_business, create_category, creat
 
 class BusinessMediaManagementApiTests(TestCase):
     def setUp(self):
+        self.temp_media_root = tempfile.mkdtemp(prefix="halkyemek-media-test-")
         self.client = APIClient()
         self.owner = create_user(username="owner")
         self.manager = create_user(username="manager")
@@ -46,6 +51,10 @@ class BusinessMediaManagementApiTests(TestCase):
             ends_at=timezone.now() + timedelta(hours=1),
             is_active=True,
         )
+
+    def tearDown(self):
+        shutil.rmtree(self.temp_media_root, ignore_errors=True)
+
 
     def test_manager_can_create_media_for_own_business(self):
         self.client.force_authenticate(self.manager)
@@ -130,3 +139,34 @@ class BusinessMediaManagementApiTests(TestCase):
             format="json",
         )
         self.assertEqual(category_resp.status_code, 201)
+
+    @override_settings(MEDIA_ASSET_MAX_BYTES=8 * 1024 * 1024)
+    def test_manager_can_upload_real_image_file(self):
+        self.client.force_authenticate(self.manager)
+        image = SimpleUploadedFile(
+            "menu-cover.png",
+            (
+                b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+                b"\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDAT\x08\x99c```\x00\x00"
+                b"\x00\x04\x00\x01\xf6\x178U\x00\x00\x00\x00IEND\xaeB`\x82"
+            ),
+            content_type="image/png",
+        )
+
+        with override_settings(MEDIA_ROOT=self.temp_media_root):
+            response = self.client.post(
+                f"/api/v1/businesses/{self.business.id}/media/",
+                {
+                    "menu_item": self.menu_item.id,
+                    "file": image,
+                    "media_type": "IMAGE",
+                    "asset_role": "COVER",
+                    "sort_order": 0,
+                    "is_active": True,
+                },
+            )
+
+        self.assertEqual(response.status_code, 201)
+        asset = MediaAsset.objects.get(menu_item=self.menu_item, asset_role="COVER")
+        self.assertTrue(asset.file_path.startswith("business-media/"))
+        self.assertIn("/media/business-media/", asset.file_url)

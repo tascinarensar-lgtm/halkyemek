@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarRange, Clock3, ImagePlus, Megaphone, Receipt, Sparkles, Star } from "lucide-react";
+import { Eye, EyeOff, ImagePlus, LayoutGrid, PackageCheck, ShoppingBag, Tags } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -19,7 +19,6 @@ import {
   ManagementToolbar,
   PrimaryButton,
   SecondaryButton,
-  Select,
   Sheet,
   TextArea,
   TextInput,
@@ -32,12 +31,12 @@ import { LoadingSkeleton } from "@/components/ui/loading-skeleton";
 import { PageContainer } from "@/components/ui/page-container";
 import { SectionHeader } from "@/components/ui/section-header";
 import {
-  createBusinessOffer,
-  deleteBusinessOffer,
+  createBusinessMenuItem,
+  deleteBusinessMenuItem,
   getBusinessDashboardSummary,
+  listBusinessCategories,
   listBusinessMenuItems,
-  listBusinessOffers,
-  updateBusinessOffer,
+  updateBusinessMenuItem,
 } from "@/features/business-operations/api";
 import {
   createEmptyEntityImageState,
@@ -46,86 +45,80 @@ import {
   syncEntityImages,
   type EntityImageState,
 } from "@/features/business-operations/media-sync";
-import type { BusinessOffer, BusinessOfferInput } from "@/features/business-operations/types";
+import type {
+  BusinessCategoryItem,
+  BusinessMenuItem,
+  BusinessMenuItemInput,
+} from "@/features/business-operations/types";
 import { getApiErrorMessage, getApiRequestId } from "@/lib/api/errors";
-import { formatCurrency, formatDateTime } from "@/lib/utils/format";
+import { cn } from "@/lib/utils/cn";
+import { formatCurrency } from "@/lib/utils/format";
 
-const schema = z
-  .object({
-    menu_item: z.coerce.number().int().nullable().optional(),
-    title: z.string().trim().min(1, "Başlık zorunlu.").max(160),
-    short_description: z.string().max(255).optional().default(""),
-    description: z.string().max(2000).optional().default(""),
-    label: z.string().max(64).optional().default(""),
-    tag: z.string().max(64).optional().default(""),
-    offer_price_amount: z.coerce.number().int().positive("Teklif fiyatı pozitif olmalı."),
-    starts_at: z.string().min(1, "Başlangıç zamanı gerekli."),
-    ends_at: z.string().min(1, "Bitiş zamanı gerekli."),
-    is_active: z.boolean(),
-    is_featured: z.boolean(),
-    daily_limit: z.union([z.coerce.number().int().positive(), z.literal(0)]).optional(),
-    sort_order: z.coerce.number().int().min(0),
-  })
-  .refine((values) => values.ends_at > values.starts_at, {
-    message: "Bitiş tarihi başlangıçtan sonra olmalı.",
-    path: ["ends_at"],
-  });
+const schema = z.object({
+  marketplace_category_ids: z.array(z.number().int().positive()).min(1, "En az bir sistem kategorisi seçmelisin."),
+  name: z.string().trim().min(1, "Ürün adı zorunlu.").max(160),
+  slug: z.string().trim().min(1, "Bağlantı adı zorunlu.").max(180),
+  description: z.string().max(2000).optional().default(""),
+  price_amount: z.coerce.number().int().positive("Fiyat 0'dan büyük olmalı."),
+  sort_order: z.coerce.number().int().min(0),
+  is_active: z.boolean(),
+  is_visible: z.boolean(),
+  is_available: z.boolean(),
+});
 
 type FormValues = z.input<typeof schema>;
 type FormSubmitValues = z.output<typeof schema>;
 
 const defaults: FormValues = {
-  menu_item: null,
-  title: "",
-  short_description: "",
+  marketplace_category_ids: [],
+  name: "",
+  slug: "",
   description: "",
-  label: "",
-  tag: "",
-  offer_price_amount: 0,
-  starts_at: "",
-  ends_at: "",
-  is_active: true,
-  is_featured: false,
-  daily_limit: 0,
+  price_amount: 0,
   sort_order: 0,
+  is_active: true,
+  is_visible: true,
+  is_available: true,
 };
 
-function toDateTimeLocal(value: string | null | undefined) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  const offset = date.getTimezoneOffset();
-  const localDate = new Date(date.getTime() - offset * 60000);
-  return localDate.toISOString().slice(0, 16);
-}
-
-function toApiPayload(values: FormSubmitValues): BusinessOfferInput {
-  return {
-    menu_item: values.menu_item || null,
-    title: values.title,
-    short_description: values.short_description ?? "",
-    description: values.description ?? "",
-    label: values.label ?? "",
-    tag: values.tag ?? "",
-    offer_price_amount: values.offer_price_amount,
-    starts_at: new Date(values.starts_at).toISOString(),
-    ends_at: new Date(values.ends_at).toISOString(),
-    is_active: values.is_active,
-    is_featured: values.is_featured,
-    daily_limit: values.daily_limit ? Number(values.daily_limit) : null,
-    sort_order: values.sort_order,
-  };
-}
-
-function getOfferState(offer: BusinessOffer) {
-  const now = Date.now();
-  const start = new Date(offer.starts_at).getTime();
-  const end = new Date(offer.ends_at).getTime();
-
-  if (!offer.is_active) return { label: "Pasif", classes: "bg-zinc-100 text-zinc-700" };
-  if (start > now) return { label: "Planlandı", classes: "bg-amber-100 text-amber-800" };
-  if (end < now) return { label: "Süresi doldu", classes: "bg-zinc-200 text-zinc-700" };
-  return { label: "Canlı", classes: "bg-emerald-100 text-emerald-700" };
+function CategorySelector({
+  categories,
+  value,
+  onChange,
+}: {
+  categories: BusinessCategoryItem[];
+  value: number[];
+  onChange: (next: number[]) => void;
+}) {
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap gap-2">
+        {categories.map((category) => {
+          const checked = value.includes(category.id);
+          return (
+            <button
+              key={category.id}
+              type="button"
+              onClick={() =>
+                onChange(checked ? value.filter((item) => item !== category.id) : [...value, category.id])
+              }
+              className={cn(
+                "rounded-full border px-3 py-2 text-sm font-medium transition",
+                checked
+                  ? "border-zinc-950 bg-zinc-950 text-white"
+                  : "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-400",
+              )}
+            >
+              {category.name}
+            </button>
+          );
+        })}
+      </div>
+      <p className="text-xs leading-5 text-zinc-500">
+        Ürünler yalnızca HalkYemek sistem kategorilerine bağlanır. Bir ürün aynı anda birden fazla kategoride görünür olabilir.
+      </p>
+    </div>
+  );
 }
 
 function SummaryCard({
@@ -153,12 +146,25 @@ function SummaryCard({
   );
 }
 
-export default function BusinessOffersManagementPage() {
+function getAvailabilityBadge(item: BusinessMenuItem) {
+  if (!item.is_active) {
+    return { label: "Pasif", classes: "bg-zinc-200 text-zinc-700" };
+  }
+  if (!item.is_visible) {
+    return { label: "Gizli", classes: "bg-amber-100 text-amber-800" };
+  }
+  if (!item.is_available) {
+    return { label: "Geçici kapalı", classes: "bg-red-100 text-red-700" };
+  }
+  return { label: "Yayında", classes: "bg-emerald-100 text-emerald-700" };
+}
+
+export default function BusinessMenuManagementPage() {
   const params = useParams<{ businessId: string }>();
   const businessId = Number(params.businessId);
   const hasValidBusinessId = Number.isFinite(businessId) && businessId > 0;
   const queryClient = useQueryClient();
-  const [editingItem, setEditingItem] = useState<BusinessOffer | null>(null);
+  const [editingItem, setEditingItem] = useState<BusinessMenuItem | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [imageState, setImageState] = useState<EntityImageState>(() => createEmptyEntityImageState());
   const imageStateRef = useRef<EntityImageState>(imageState);
@@ -182,9 +188,9 @@ export default function BusinessOffersManagementPage() {
 
   const canManage = isManagementRole(dashboardQuery.data?.business.member_role);
 
-  const offersQuery = useQuery({
-    queryKey: ["business-management", businessId, "offers"],
-    queryFn: () => listBusinessOffers(businessId),
+  const categoriesQuery = useQuery({
+    queryKey: ["business-management", businessId, "categories"],
+    queryFn: () => listBusinessCategories(businessId),
     enabled: hasValidBusinessId && canManage,
   });
 
@@ -212,8 +218,9 @@ export default function BusinessOffersManagementPage() {
 
   const invalidate = async () => {
     await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["business-management", businessId, "offers"] }),
+      queryClient.invalidateQueries({ queryKey: ["business-management", businessId, "categories"] }),
       queryClient.invalidateQueries({ queryKey: ["business-management", businessId, "menu-items"] }),
+      queryClient.invalidateQueries({ queryKey: ["business-management", businessId, "offers"] }),
       queryClient.invalidateQueries({ queryKey: ["business-management", businessId, "media"] }),
       queryClient.invalidateQueries({ queryKey: ["business-operations", businessId, "dashboard"] }),
       queryClient.invalidateQueries({ queryKey: ["catalog", "business-detail", businessId] }),
@@ -224,23 +231,23 @@ export default function BusinessOffersManagementPage() {
   };
 
   const createMutation = useMutation({
-    mutationFn: async ({ values, images }: { values: FormSubmitValues; images: EntityImageState }) => {
-      const offer = await createBusinessOffer(businessId, toApiPayload(values));
+    mutationFn: async ({ values, images }: { values: BusinessMenuItemInput; images: EntityImageState }) => {
+      const item = await createBusinessMenuItem(businessId, values);
       await syncEntityImages({
         businessId,
-        target: { offer: offer.id },
+        target: { menu_item: item.id },
         currentImages: [],
         nextState: images,
-        defaultAltText: values.title,
+        defaultAltText: values.name,
       });
-      return offer;
+      return item;
     },
     onSuccess: async () => {
-      toast.success("Teklif ve fotoğrafları kaydedildi.");
+      toast.success("Menü ürünü ve fotoğrafları kaydedildi.");
       setSheetOpen(false);
       await invalidate();
     },
-    onError: (error) => toast.error(getApiErrorMessage(error, "Teklif kaydedilemedi.")),
+    onError: (error) => toast.error(getApiErrorMessage(error, "Menü ürünü kaydedilemedi.")),
   });
 
   const updateMutation = useMutation({
@@ -249,60 +256,45 @@ export default function BusinessOffersManagementPage() {
       values,
       images,
     }: {
-      item: BusinessOffer;
-      values: FormSubmitValues;
+      item: BusinessMenuItem;
+      values: Partial<BusinessMenuItemInput>;
       images: EntityImageState;
     }) => {
-      const offer = await updateBusinessOffer(businessId, item.id, toApiPayload(values));
+      const updated = await updateBusinessMenuItem(businessId, item.id, values);
       await syncEntityImages({
         businessId,
-        target: { offer: item.id },
+        target: { menu_item: item.id },
         currentImages: item.media_assets,
         nextState: images,
-        defaultAltText: values.title,
+        defaultAltText: values.name || item.name,
       });
-      return offer;
+      return updated;
     },
     onSuccess: async () => {
-      toast.success("Teklif güncellendi.");
+      toast.success("Menü ürünü güncellendi.");
       setSheetOpen(false);
       await invalidate();
     },
-    onError: (error) => toast.error(getApiErrorMessage(error, "Teklif güncellenemedi.")),
+    onError: (error) => toast.error(getApiErrorMessage(error, "Menü ürünü güncellenemedi.")),
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (offerId: number) => deleteBusinessOffer(businessId, offerId),
+    mutationFn: (menuItemId: number) => deleteBusinessMenuItem(businessId, menuItemId),
     onSuccess: async () => {
-      toast.success("Teklif yayından kaldırıldı.");
+      toast.success("Ürün yayından kaldırıldı.");
       await invalidate();
     },
-    onError: (error) => toast.error(getApiErrorMessage(error, "Teklif silinemedi.")),
+    onError: (error) => toast.error(getApiErrorMessage(error, "Ürün silinemedi.")),
   });
 
-  const summary = useMemo(() => {
-    const items = offersQuery.data ?? [];
-    const now = Date.now();
+  const menuSummary = useMemo(() => {
+    const items = menuItemsQuery.data ?? [];
     return {
       total: items.length,
       active: items.filter((item) => item.is_active).length,
-      live: items.filter(
-        (item) =>
-          item.is_active &&
-          new Date(item.starts_at).getTime() <= now &&
-          new Date(item.ends_at).getTime() >= now,
-      ).length,
-      featured: items.filter((item) => item.is_featured).length,
+      visible: items.filter((item) => item.is_visible).length,
       imageCount: items.reduce((count, item) => count + item.media_assets.length, 0),
     };
-  }, [offersQuery.data]);
-
-  const menuItemMap = useMemo(() => {
-    const map = new Map<number, string>();
-    for (const item of menuItemsQuery.data ?? []) {
-      map.set(item.id, item.name);
-    }
-    return map;
   }, [menuItemsQuery.data]);
 
   function openCreate() {
@@ -312,45 +304,55 @@ export default function BusinessOffersManagementPage() {
     setSheetOpen(true);
   }
 
-  function openEdit(item: BusinessOffer) {
+  function openEdit(item: BusinessMenuItem) {
     setEditingItem(item);
     form.reset({
-      menu_item: item.menu_item,
-      title: item.title,
-      short_description: item.short_description ?? "",
+      marketplace_category_ids: item.marketplace_categories.map((category) => category.id),
+      name: item.name,
+      slug: item.slug,
       description: item.description ?? "",
-      label: item.label ?? "",
-      tag: item.tag ?? "",
-      offer_price_amount: item.offer_price_amount,
-      starts_at: toDateTimeLocal(item.starts_at),
-      ends_at: toDateTimeLocal(item.ends_at),
-      is_active: item.is_active,
-      is_featured: item.is_featured,
-      daily_limit: item.daily_limit ?? 0,
+      price_amount: item.price_amount,
       sort_order: item.sort_order,
+      is_active: item.is_active,
+      is_visible: item.is_visible,
+      is_available: item.is_available,
     });
     setImageState(createEntityImageState(item.media_assets));
     setSheetOpen(true);
   }
 
   function onSubmit(values: FormSubmitValues) {
+    const payload = {
+      marketplace_category_ids: values.marketplace_category_ids,
+      name: values.name,
+      slug: values.slug,
+      description: values.description ?? "",
+      price_amount: values.price_amount,
+      sort_order: values.sort_order,
+      is_active: values.is_active,
+      is_visible: values.is_visible,
+      is_available: values.is_available,
+    };
+
     const images = imageStateRef.current;
     if (editingItem) {
-      updateMutation.mutate({ item: editingItem, values, images });
+      updateMutation.mutate({ item: editingItem, values: payload, images });
       return;
     }
-    createMutation.mutate({ values, images });
+    createMutation.mutate({ values: payload, images });
   }
 
   const isBusy = createMutation.isPending || updateMutation.isPending || deleteMutation.isPending;
+  const selectedCategoryIds = form.watch("marketplace_category_ids");
+  const itemCount = menuItemsQuery.data?.length ?? 0;
 
   return (
     <PageContainer>
       <BusinessPanelShell businessId={hasValidBusinessId ? businessId : null}>
         <div className="space-y-6">
           <SectionHeader
-            title="Teklif yönetimi"
-            description="Kampanyalarını, menü bağlantılarını, yayın süresini ve fotoğraflarını sade ama güçlü bir akışla yönet."
+            title="Menü yönetimi"
+            description="Ürünlerini, kategori eşleşmelerini ve fotoğraflarını tek akışta düzenle. Görselleri linkle değil, dosya seçerek yönet."
           />
 
           {!hasValidBusinessId ? (
@@ -360,7 +362,7 @@ export default function BusinessOffersManagementPage() {
             />
           ) : null}
 
-          {dashboardQuery.isPending || (canManage && (offersQuery.isPending || menuItemsQuery.isPending)) ? (
+          {dashboardQuery.isPending || (canManage && (categoriesQuery.isPending || menuItemsQuery.isPending)) ? (
             <LoadingSkeleton />
           ) : null}
 
@@ -373,11 +375,20 @@ export default function BusinessOffersManagementPage() {
             />
           ) : null}
 
-          {canManage && offersQuery.isError ? (
+          {canManage && categoriesQuery.isError ? (
             <ErrorState
-              title="Teklifler yüklenemedi"
-              description={`${getApiErrorMessage(offersQuery.error)}${
-                getApiRequestId(offersQuery.error) ? ` · request_id: ${getApiRequestId(offersQuery.error)}` : ""
+              title="Kategori eşleşmeleri yüklenemedi"
+              description={`${getApiErrorMessage(categoriesQuery.error)}${
+                getApiRequestId(categoriesQuery.error) ? ` · request_id: ${getApiRequestId(categoriesQuery.error)}` : ""
+              }`}
+            />
+          ) : null}
+
+          {canManage && menuItemsQuery.isError ? (
+            <ErrorState
+              title="Menü ürünleri yüklenemedi"
+              description={`${getApiErrorMessage(menuItemsQuery.error)}${
+                getApiRequestId(menuItemsQuery.error) ? ` · request_id: ${getApiRequestId(menuItemsQuery.error)}` : ""
               }`}
             />
           ) : null}
@@ -385,7 +396,7 @@ export default function BusinessOffersManagementPage() {
           {dashboardQuery.data && !canManage ? (
             <EmptyState
               title="Bu alanı yönetmek için yetkin yeterli değil"
-              description="Teklif oluşturma ve düzenleme alanı yönetici veya sahip rolüne açıktır. Kasiyer rolündeysen bu bölümde yalnızca sınırlı görünüm sağlanır."
+              description="Menü oluşturma ve düzenleme alanı yönetici veya sahip rolüne açıktır. Kasiyer rolündeysen bu bölümde yalnızca sınırlı görünüm sağlanır."
             />
           ) : null}
 
@@ -396,42 +407,42 @@ export default function BusinessOffersManagementPage() {
                   <CardContent className="space-y-5 p-6">
                     <div className="flex items-start gap-3">
                       <div className="rounded-2xl bg-zinc-950 p-2.5 text-white">
-                        <Megaphone className="h-4 w-4" />
+                        <ShoppingBag className="h-4 w-4" />
                       </div>
                       <div>
                         <h2 className="text-xl font-semibold tracking-tight text-zinc-950">
-                          Kampanyalarını daha güçlü göster
+                          Menü kartlarını güçlü ve düzenli tut
                         </h2>
                         <p className="mt-2 text-sm leading-6 text-zinc-600">
-                          Her teklif menü ürünüyle bağlanabilir, belirli saat aralığında yayına alınabilir ve etkili görsellerle müşteriye daha net sunulabilir.
+                          Her ürün sistem kategorilerine bağlı, görselleri eksiksiz ve vitrinde güven veren bir yapıda olmalı. Bu ekran, hem içerik düzenini hem de fotoğraf kalitesini tek merkezde toplar.
                         </p>
                       </div>
                     </div>
 
                     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                       <SummaryCard
-                        icon={<Megaphone className="h-4 w-4" />}
-                        title="Toplam teklif"
-                        value={String(summary.total)}
-                        description="İşletmene bağlı tüm kampanya kayıtları."
+                        icon={<LayoutGrid className="h-4 w-4" />}
+                        title="Toplam ürün"
+                        value={String(menuSummary.total)}
+                        description="İşletmene bağlı tüm menü kayıtları."
                       />
                       <SummaryCard
-                        icon={<Sparkles className="h-4 w-4" />}
-                        title="Canlı teklif"
-                        value={String(summary.live)}
-                        description="Şu anda müşteri tarafında yayında olan teklifler."
+                        icon={<PackageCheck className="h-4 w-4" />}
+                        title="Aktif ürün"
+                        value={String(menuSummary.active)}
+                        description="Şu an yayına açık ürün sayısı."
                       />
                       <SummaryCard
-                        icon={<Star className="h-4 w-4" />}
-                        title="Öne çıkan"
-                        value={String(summary.featured)}
-                        description="Vitrinde ekstra vurgu alan kampanyalar."
+                        icon={<Eye className="h-4 w-4" />}
+                        title="Görünür ürün"
+                        value={String(menuSummary.visible)}
+                        description="Müşterinin vitrinde görebildiği kayıtlar."
                       />
                       <SummaryCard
                         icon={<ImagePlus className="h-4 w-4" />}
                         title="Toplam görsel"
-                        value={String(summary.imageCount)}
-                        description="Teklif kartlarına bağlanan aktif fotoğraflar."
+                        value={String(menuSummary.imageCount)}
+                        description="Menü kartlarına bağlanan aktif fotoğraflar."
                       />
                     </div>
                   </CardContent>
@@ -440,11 +451,11 @@ export default function BusinessOffersManagementPage() {
                 <Card className="border-stone-200 bg-zinc-950 text-white">
                   <CardContent className="space-y-4 p-6">
                     <div className="flex items-center gap-2 text-sm font-medium text-zinc-200">
-                      <Sparkles className="h-4 w-4" />
+                      <Tags className="h-4 w-4" />
                       Bu ekran neyi garanti eder?
                     </div>
                     <div className="rounded-2xl bg-white/5 p-4 text-sm leading-6 text-zinc-200">
-                      Her teklif için yayın zamanı, görsel seti, menü bağlantısı ve öne çıkarma kararı aynı yerde tutulur. Böylece müşteri tarafında eksik ya da dağınık kampanya kartı oluşmaz.
+                      İşletme kendi kafasına göre kategori açmaz. Her ürün, HalkYemek sistem kategorilerine bağlanır. Böylece müşteri tarafında kategori gezintisi bozulmadan, doğru ürün doğru yerde görünür.
                     </div>
                     <div className="grid gap-3">
                       <div className="flex items-center justify-between rounded-2xl bg-white/5 px-4 py-3 text-sm">
@@ -452,12 +463,12 @@ export default function BusinessOffersManagementPage() {
                         <span className="font-medium text-white">{dashboardQuery.data.business.member_role}</span>
                       </div>
                       <div className="flex items-center justify-between rounded-2xl bg-white/5 px-4 py-3 text-sm">
-                        <span>Bağlanabilir menü ürünü</span>
-                        <span className="font-medium text-white">{menuItemsQuery.data?.length ?? 0}</span>
+                        <span>Sistem kategorisi sayısı</span>
+                        <span className="font-medium text-white">{categoriesQuery.data?.length ?? 0}</span>
                       </div>
                       <div className="flex items-center justify-between rounded-2xl bg-white/5 px-4 py-3 text-sm">
-                        <span>Aktif teklif</span>
-                        <span className="font-medium text-white">{summary.active}</span>
+                        <span>Yönetilen menü kaydı</span>
+                        <span className="font-medium text-white">{itemCount}</span>
                       </div>
                     </div>
                   </CardContent>
@@ -465,37 +476,33 @@ export default function BusinessOffersManagementPage() {
               </div>
 
               <ManagementToolbar
-                title="Teklif listesi"
-                description="Kampanyalarını burada görür, yeni teklif açar ve canlı bir fırsatı birkaç adımda güncellersin."
+                title="Menü ürünleri"
+                description="Ürün ekleyebilir, fiyat ve görünürlük kararlarını düzenleyebilir, kapak ve galeri fotoğraflarını tek akışta yönetebilirsin."
                 action={
                   <PrimaryButton onClick={openCreate} disabled={!hasValidBusinessId || isBusy}>
-                    Yeni teklif oluştur
+                    Yeni ürün oluştur
                   </PrimaryButton>
                 }
               />
 
-              {offersQuery.data?.length ? (
+              {menuItemsQuery.data?.length ? (
                 <div className="space-y-4">
-                  {offersQuery.data.map((item) => {
-                    const state = getOfferState(item);
-                    const menuItemName = item.menu_item
-                      ? menuItemMap.get(item.menu_item) ?? `Ürün #${item.menu_item}`
-                      : "Genel teklif";
-
+                  {menuItemsQuery.data.map((item) => {
+                    const state = getAvailabilityBadge(item);
                     return (
                       <CrudCard
                         key={item.id}
-                        title={item.title}
-                        subtitle={`${formatCurrency(item.offer_price_amount / 100)} · ${menuItemName}`}
+                        title={item.name}
+                        subtitle={`${formatCurrency(item.price_amount / 100)} · ${item.marketplace_categories.length} sistem kategorisi`}
                         badge={
                           <div className="flex flex-wrap items-center gap-2">
                             <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${state.classes}`}>
                               {state.label}
                             </span>
-                            {item.is_featured ? (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800">
-                                <Star className="h-3 w-3" />
-                                Öne çıkan
+                            {!item.is_visible ? (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-700">
+                                <EyeOff className="h-3 w-3" />
+                                Vitrinden gizli
                               </span>
                             ) : null}
                           </div>
@@ -519,14 +526,14 @@ export default function BusinessOffersManagementPage() {
                                   {/* eslint-disable-next-line @next/next/no-img-element */}
                                   <img
                                     src={item.primary_image_url}
-                                    alt={item.title}
+                                    alt={item.name}
                                     className="h-full w-full object-cover"
                                   />
                                 </div>
                               </div>
                             ) : (
                               <div className="flex aspect-[16/10] items-center justify-center rounded-[28px] border border-dashed border-zinc-300 bg-zinc-50 text-sm text-zinc-500">
-                                Bu teklif için henüz fotoğraf eklenmedi
+                                Bu ürün için henüz fotoğraf eklenmedi
                               </div>
                             )}
 
@@ -538,7 +545,7 @@ export default function BusinessOffersManagementPage() {
                                       {/* eslint-disable-next-line @next/next/no-img-element */}
                                       <img
                                         src={image.url}
-                                        alt={image.alt_text || item.title}
+                                        alt={image.alt_text || item.name}
                                         className="h-full w-full object-cover"
                                       />
                                     </div>
@@ -551,47 +558,47 @@ export default function BusinessOffersManagementPage() {
                           <div className="space-y-4">
                             <div className="grid gap-3 sm:grid-cols-3">
                               <div className="rounded-2xl bg-zinc-50 p-4">
-                                <div className="inline-flex items-center gap-2 text-xs font-medium uppercase tracking-[0.16em] text-zinc-500">
-                                  <CalendarRange className="h-3.5 w-3.5" />
-                                  Başlangıç
-                                </div>
-                                <div className="mt-2 text-sm font-semibold text-zinc-950">{formatDateTime(item.starts_at)}</div>
+                                <div className="text-xs font-medium uppercase tracking-[0.16em] text-zinc-500">Sıralama</div>
+                                <div className="mt-2 text-base font-semibold text-zinc-950">{item.sort_order}</div>
                               </div>
                               <div className="rounded-2xl bg-zinc-50 p-4">
-                                <div className="inline-flex items-center gap-2 text-xs font-medium uppercase tracking-[0.16em] text-zinc-500">
-                                  <Clock3 className="h-3.5 w-3.5" />
-                                  Bitiş
-                                </div>
-                                <div className="mt-2 text-sm font-semibold text-zinc-950">{formatDateTime(item.ends_at)}</div>
+                                <div className="text-xs font-medium uppercase tracking-[0.16em] text-zinc-500">Fotoğraf</div>
+                                <div className="mt-2 text-base font-semibold text-zinc-950">{item.media_assets.length}</div>
                               </div>
                               <div className="rounded-2xl bg-zinc-50 p-4">
-                                <div className="inline-flex items-center gap-2 text-xs font-medium uppercase tracking-[0.16em] text-zinc-500">
-                                  <Receipt className="h-3.5 w-3.5" />
-                                  Günlük limit
+                                <div className="text-xs font-medium uppercase tracking-[0.16em] text-zinc-500">Bağlı kategori</div>
+                                <div className="mt-2 text-base font-semibold text-zinc-950">
+                                  {item.marketplace_categories.length}
                                 </div>
-                                <div className="mt-2 text-sm font-semibold text-zinc-950">{item.daily_limit ?? "Sınırsız"}</div>
                               </div>
                             </div>
 
-                            {item.short_description ? (
-                              <p className="text-sm leading-6 text-zinc-700">{item.short_description}</p>
+                            {item.description ? (
+                              <p className="text-sm leading-6 text-zinc-700">{item.description}</p>
                             ) : (
                               <p className="text-sm leading-6 text-zinc-500">
-                                Bu teklif için henüz kısa açıklama eklenmedi.
+                                Bu ürün için henüz detaylı açıklama eklenmedi.
                               </p>
                             )}
 
-                            <div className="flex flex-wrap gap-2">
-                              {item.label ? (
-                                <span className="rounded-full bg-zinc-100 px-3 py-1.5 text-xs font-medium text-zinc-700">
-                                  {item.label}
-                                </span>
-                              ) : null}
-                              {item.tag ? (
-                                <span className="rounded-full bg-zinc-950 px-3 py-1.5 text-xs font-medium text-white">
-                                  {item.tag}
-                                </span>
-                              ) : null}
+                            <div className="space-y-2">
+                              <p className="text-sm font-medium text-zinc-900">Sistem kategorileri</p>
+                              <div className="flex flex-wrap gap-2">
+                                {item.marketplace_categories.map((category) => (
+                                  <span
+                                    key={category.id}
+                                    className={cn(
+                                      "rounded-full px-3 py-1.5 text-xs font-medium",
+                                      category.is_primary
+                                        ? "bg-zinc-950 text-white"
+                                        : "bg-zinc-100 text-zinc-700",
+                                    )}
+                                  >
+                                    {category.name}
+                                    {category.is_primary ? " · Ana kategori" : ""}
+                                  </span>
+                                ))}
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -599,17 +606,17 @@ export default function BusinessOffersManagementPage() {
                     );
                   })}
                 </div>
-              ) : offersQuery.data && !offersQuery.isPending ? (
+              ) : menuItemsQuery.data && !menuItemsQuery.isPending ? (
                 <div className="space-y-4">
                   <EmptyState
-                    title="Henüz teklif eklenmedi"
-                    description="İlk kampanyanı oluşturarak menü kartlarını güçlendirebilir, uygun fiyatlı seçenekleri vitrinde öne çıkarabilirsin."
+                    title="Henüz ürün eklenmedi"
+                    description="İlk ürünü oluşturarak işletme menünü görünür hale getirebilir, fotoğraf ve kategori eşleşmesini aynı adımda tamamlayabilirsin."
                   />
                   <Card className="border-stone-200">
                     <CardContent className="space-y-3 p-6 text-sm leading-6 text-zinc-600">
                       <p className="font-medium text-zinc-900">İyi başlangıç için kısa not</p>
                       <p>
-                        Bir teklif için net başlık, belirgin fiyat, doğru saat aralığı ve en az bir kaliteli görsel kullan. Böylece müşteri kampanyanın ne sunduğunu tek bakışta anlar.
+                        İlk ürününde net isim, doğru fiyat, en az bir kapak görseli ve doğru sistem kategorisi kullan. Böylece müşteri kategori gezintisinde ürününü güvenle görür.
                       </p>
                     </CardContent>
                   </Card>
@@ -622,66 +629,60 @@ export default function BusinessOffersManagementPage() {
         <Sheet
           open={sheetOpen}
           onClose={() => setSheetOpen(false)}
-          title={editingItem ? "Teklifi düzenle" : "Yeni teklif oluştur"}
-          description="Teklif bilgilerini, yayın zamanını ve fotoğraflarını aynı akış içinde kaydet."
+          title={editingItem ? "Ürünü düzenle" : "Yeni ürün oluştur"}
+          description="Ürün bilgilerini, sistem kategori eşleşmelerini ve fotoğraflarını aynı akış içinde kaydet."
         >
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
-            <Field label="Bağlı menü ürünü">
-              <Select
-                value={form.watch("menu_item") ?? ""}
-                onChange={(event) => form.setValue("menu_item", event.target.value ? Number(event.target.value) : null)}
+            <Field
+              label="Sistem kategorileri"
+              hint="Müşteri tarafındaki kategori gezintisi bu seçimlere göre çalışır."
+              error={form.formState.errors.marketplace_category_ids?.message}
+            >
+              <CategorySelector
+                categories={categoriesQuery.data ?? []}
+                value={selectedCategoryIds}
+                onChange={(next) =>
+                  form.setValue("marketplace_category_ids", next, {
+                    shouldDirty: true,
+                    shouldTouch: true,
+                    shouldValidate: true,
+                  })
+                }
+              />
+            </Field>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field label="Ürün adı" error={form.formState.errors.name?.message}>
+                <TextInput {...form.register("name")} disabled={!canManage || isBusy} />
+              </Field>
+              <Field label="Bağlantı adı" error={form.formState.errors.slug?.message}>
+                <TextInput {...form.register("slug")} disabled={!canManage || isBusy} />
+              </Field>
+            </div>
+
+            <Field label="Açıklama" error={form.formState.errors.description?.message}>
+              <TextArea
+                rows={4}
+                {...form.register("description")}
                 disabled={!canManage || isBusy}
-              >
-                <option value="">Genel teklif</option>
-                {(menuItemsQuery.data ?? []).map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
-              </Select>
+                placeholder="Ürünün içeriğini, porsiyon bilgisini veya dikkat çekici detayını ekleyebilirsin."
+              />
             </Field>
 
             <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Başlık" error={form.formState.errors.title?.message}>
-                <TextInput {...form.register("title")} disabled={!canManage || isBusy} />
-              </Field>
-              <Field label="Teklif fiyatı (kuruş)" error={form.formState.errors.offer_price_amount?.message}>
-                <TextInput type="number" {...form.register("offer_price_amount", { valueAsNumber: true })} disabled={!canManage || isBusy} />
-              </Field>
-            </div>
-
-            <Field label="Kısa açıklama" error={form.formState.errors.short_description?.message}>
-              <TextInput {...form.register("short_description")} disabled={!canManage || isBusy} />
-            </Field>
-
-            <Field label="Detaylı açıklama" error={form.formState.errors.description?.message}>
-              <TextArea rows={4} {...form.register("description")} disabled={!canManage || isBusy} placeholder="Teklif içeriğini, avantajını veya menü bilgisini detaylandırabilirsin." />
-            </Field>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Rozet metni" error={form.formState.errors.label?.message}>
-                <TextInput {...form.register("label")} disabled={!canManage || isBusy} />
-              </Field>
-              <Field label="Kısa etiket" error={form.formState.errors.tag?.message}>
-                <TextInput {...form.register("tag")} disabled={!canManage || isBusy} />
-              </Field>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Başlangıç zamanı" error={form.formState.errors.starts_at?.message}>
-                <TextInput type="datetime-local" {...form.register("starts_at")} disabled={!canManage || isBusy} />
-              </Field>
-              <Field label="Bitiş zamanı" error={form.formState.errors.ends_at?.message}>
-                <TextInput type="datetime-local" {...form.register("ends_at")} disabled={!canManage || isBusy} />
-              </Field>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Günlük limit" error={form.formState.errors.daily_limit?.message as string | undefined}>
-                <TextInput type="number" {...form.register("daily_limit", { valueAsNumber: true })} disabled={!canManage || isBusy} />
+              <Field label="Fiyat (kuruş)" error={form.formState.errors.price_amount?.message}>
+                <TextInput
+                  type="number"
+                  {...form.register("price_amount", { valueAsNumber: true })}
+                  disabled={!canManage || isBusy}
+                />
               </Field>
               <Field label="Sıralama" error={form.formState.errors.sort_order?.message}>
-                <TextInput type="number" {...form.register("sort_order", { valueAsNumber: true })} disabled={!canManage || isBusy} />
+                <TextInput
+                  type="number"
+                  {...form.register("sort_order", { valueAsNumber: true })}
+                  disabled={!canManage || isBusy}
+                />
               </Field>
             </div>
 
@@ -689,22 +690,29 @@ export default function BusinessOffersManagementPage() {
               value={imageState}
               onChange={setImageState}
               disabled={!canManage || isBusy}
-              title="Teklif fotoğrafları"
-              description="Teklif kapağını ve galeri görsellerini cihazından seç. Kampanya kartları bu görsellerle daha profesyonel görünür."
+              title="Ürün fotoğrafları"
+              description="Kapak ve galeri görsellerini doğrudan cihazından seç. Kaydettiğinde eski görseller temizlenir, yeniler profesyonel şekilde güncellenir."
             />
 
             <ToggleRow
-              label="Teklif aktif"
-              description="Pasif teklif planlı olsa da vitrinde canlı görünmez."
+              label="Ürün aktif"
+              description="Pasif ürün kaydı arşivde kalır ancak müşteri tarafında yayında görünmez."
               checked={form.watch("is_active")}
               onChange={(next) => form.setValue("is_active", next)}
               disabled={!canManage || isBusy}
             />
             <ToggleRow
-              label="Öne çıkar"
-              description="Açık olduğunda teklif üst sıralarda ve daha güçlü vurgu ile gösterilir."
-              checked={form.watch("is_featured")}
-              onChange={(next) => form.setValue("is_featured", next)}
+              label="Vitrinde görünür"
+              description="Kapalıysa ürün kayıtlı kalır ama müşteri bu ürünü listede görmez."
+              checked={form.watch("is_visible")}
+              onChange={(next) => form.setValue("is_visible", next)}
+              disabled={!canManage || isBusy}
+            />
+            <ToggleRow
+              label="Şu anda satışta"
+              description="Geçici olarak servis dışı bir ürünü silmeden kapatmak için bu alanı kullan."
+              checked={form.watch("is_available")}
+              onChange={(next) => form.setValue("is_available", next)}
               disabled={!canManage || isBusy}
             />
 

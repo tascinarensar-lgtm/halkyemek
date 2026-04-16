@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 from urllib.parse import urlparse
-from urllib.parse import urljoin
 
 from django.conf import settings
 from django.utils import timezone

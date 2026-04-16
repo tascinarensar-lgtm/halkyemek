@@ -1,84 +1,93 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useForm } from "react-hook-form";
+import { Building2, ImagePlus, Images, ShieldCheck, Sparkles, Trash2, UploadCloud } from "lucide-react";
 import { toast } from "sonner";
-import { z } from "zod";
 
 import { BusinessPanelShell } from "@/components/business/business-panel-shell";
 import { isManagementRole } from "@/components/business/business-role";
-import { CrudCard, DangerButton, Field, ManagementToolbar, PrimaryButton, SecondaryButton, Select, Sheet, TextArea, TextInput, ToggleRow } from "@/components/business-management/shared";
+import { EntityImageManager } from "@/components/business-management/entity-image-manager";
+import {
+  ManagementToolbar,
+  PrimaryButton,
+  SecondaryButton,
+} from "@/components/business-management/shared";
+import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { LoadingSkeleton } from "@/components/ui/loading-skeleton";
 import { PageContainer } from "@/components/ui/page-container";
 import { SectionHeader } from "@/components/ui/section-header";
-import { createBusinessMediaAsset, deleteBusinessMediaAsset, getBusinessDashboardSummary, listBusinessMediaAssets, listBusinessMenuItems, listBusinessOffers, updateBusinessMediaAsset } from "@/features/business-operations/api";
-import type { BusinessMediaAsset, BusinessMediaAssetInput } from "@/features/business-operations/types";
+import {
+  deleteBusinessMediaAsset,
+  getBusinessDashboardSummary,
+  listBusinessMediaAssets,
+  uploadBusinessMediaAsset,
+} from "@/features/business-operations/api";
+import {
+  createEmptyEntityImageState,
+  createEntityImageState,
+  disposeEntityImageState,
+  syncEntityImages,
+  type EntityImageState,
+} from "@/features/business-operations/media-sync";
+import type { BusinessMediaAsset } from "@/features/business-operations/types";
 import { getApiErrorMessage, getApiRequestId } from "@/lib/api/errors";
 
-const mediaTypes = ["IMAGE", "VIDEO", "DOCUMENT"] as const;
-const assetRoles = ["GALLERY", "COVER", "LOGO", "THUMBNAIL"] as const;
+type LogoDraft =
+  | { kind: "existing"; asset: BusinessMediaAsset; previewUrl: string }
+  | { kind: "new"; file: File; previewUrl: string }
+  | null;
 
-const schema = z.object({
-  target_type: z.enum(["BUSINESS", "MENU_ITEM", "OFFER"]),
-  target_id: z.coerce.number().int().nullable().optional(),
-  file_url: z.string().trim().optional().default(""),
-  file_path: z.string().trim().optional().default(""),
-  media_type: z.enum(mediaTypes),
-  asset_role: z.enum(assetRoles),
-  alt_text: z.string().max(255).optional().default(""),
-  sort_order: z.coerce.number().int().min(0),
-  is_active: z.boolean(),
-  metadata_file_size_bytes: z.coerce.number().int().min(0).optional(),
-}).superRefine((values, ctx) => {
-  if (!values.file_url && !values.file_path) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["file_url"], message: "file_url veya file_path gerekli." });
-  }
-  if (values.target_type !== "BUSINESS" && !values.target_id) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["target_id"], message: "Bir hedef seçmelisin." });
-  }
-});
-
-type FormValues = z.input<typeof schema>;
-type FormSubmitValues = z.output<typeof schema>;
-
-const defaults: FormValues = {
-  target_type: "BUSINESS",
-  target_id: null,
-  file_url: "",
-  file_path: "",
-  media_type: "IMAGE",
-  asset_role: "GALLERY",
-  alt_text: "",
-  sort_order: 0,
-  is_active: true,
-  metadata_file_size_bytes: 0,
-};
-
-function toPayload(values: FormValues): BusinessMediaAssetInput {
+function createLogoDraft(asset: BusinessMediaAsset | null | undefined): LogoDraft {
+  if (!asset) return null;
   return {
-    menu_item: values.target_type === "MENU_ITEM" ? values.target_id ?? null : null,
-    offer: values.target_type === "OFFER" ? values.target_id ?? null : null,
-    file_url: values.file_url || undefined,
-    file_path: values.file_path || undefined,
-    media_type: values.media_type,
-    asset_role: values.asset_role,
-    alt_text: values.alt_text,
-    sort_order: values.sort_order,
-    is_active: values.is_active,
-    metadata: values.metadata_file_size_bytes ? { file_size_bytes: values.metadata_file_size_bytes } : undefined,
+    kind: "existing",
+    asset,
+    previewUrl: asset.url,
   };
 }
 
-function getTargetLabel(item: BusinessMediaAsset) {
-  if (item.menu_item) return `Menu item #${item.menu_item}`;
-  if (item.offer) return `Offer #${item.offer}`;
-  if (item.marketplace_category) return `Marketplace category #${item.marketplace_category}`;
-  return "Business root asset";
+function createNewLogoDraft(file: File): LogoDraft {
+  return {
+    kind: "new",
+    file,
+    previewUrl: URL.createObjectURL(file),
+  };
+}
+
+function disposeLogoDraft(draft: LogoDraft) {
+  if (!draft) return;
+  if (draft.kind === "new") {
+    URL.revokeObjectURL(draft.previewUrl);
+  }
+}
+
+function readFirstImage(input: FileList | null) {
+  if (!input) return null;
+  return Array.from(input).find((file) => file.type.startsWith("image/")) ?? null;
+}
+
+function getRootImageAssets(items: BusinessMediaAsset[]) {
+  return items.filter(
+    (item) =>
+      item.media_type === "IMAGE" &&
+      !item.menu_item &&
+      !item.offer &&
+      !item.marketplace_category,
+  );
+}
+
+function buildUploadFormData(file: File, role: "LOGO") {
+  const formData = new FormData();
+  formData.set("file", file);
+  formData.set("media_type", "IMAGE");
+  formData.set("asset_role", role);
+  formData.set("sort_order", "0");
+  formData.set("is_active", "true");
+  return formData;
 }
 
 export default function BusinessMediaManagementPage() {
@@ -86,225 +95,341 @@ export default function BusinessMediaManagementPage() {
   const businessId = Number(params.businessId);
   const hasValidBusinessId = Number.isFinite(businessId) && businessId > 0;
   const queryClient = useQueryClient();
-  const [editingItem, setEditingItem] = useState<BusinessMediaAsset | null>(null);
-  const [sheetOpen, setSheetOpen] = useState(false);
+  const [showcaseState, setShowcaseState] = useState<EntityImageState>(() => createEmptyEntityImageState());
+  const [logoState, setLogoState] = useState<LogoDraft>(null);
+  const showcaseStateRef = useRef<EntityImageState>(showcaseState);
+  const logoStateRef = useRef<LogoDraft>(logoState);
+
+  useEffect(() => {
+    showcaseStateRef.current = showcaseState;
+  }, [showcaseState]);
+
+  useEffect(() => {
+    logoStateRef.current = logoState;
+  }, [logoState]);
+
+  useEffect(
+    () => () => {
+      disposeEntityImageState(showcaseStateRef.current);
+      disposeLogoDraft(logoStateRef.current);
+    },
+    [],
+  );
 
   const dashboardQuery = useQuery({
     queryKey: ["business-operations", businessId, "dashboard"],
     queryFn: () => getBusinessDashboardSummary(businessId),
     enabled: hasValidBusinessId,
+    refetchOnWindowFocus: false,
   });
+
   const canManage = isManagementRole(dashboardQuery.data?.business.member_role);
 
   const mediaQuery = useQuery({
     queryKey: ["business-management", businessId, "media"],
     queryFn: () => listBusinessMediaAssets(businessId),
     enabled: hasValidBusinessId && canManage,
-  });
-  const menuItemsQuery = useQuery({
-    queryKey: ["business-management", businessId, "menu-items"],
-    queryFn: () => listBusinessMenuItems(businessId),
-    enabled: hasValidBusinessId && canManage,
-  });
-  const offersQuery = useQuery({
-    queryKey: ["business-management", businessId, "offers"],
-    queryFn: () => listBusinessOffers(businessId),
-    enabled: hasValidBusinessId && canManage,
+    refetchOnWindowFocus: false,
   });
 
-  const form = useForm<FormValues, unknown, FormSubmitValues>({
-    resolver: zodResolver(schema),
-    defaultValues: defaults,
-  });
+  const rootImages = useMemo(() => getRootImageAssets(mediaQuery.data ?? []), [mediaQuery.data]);
+  const rootLogo = useMemo(
+    () => rootImages.find((item) => item.asset_role === "LOGO") ?? null,
+    [rootImages],
+  );
+  const showcaseImages = useMemo(
+    () => rootImages.filter((item) => item.asset_role !== "LOGO"),
+    [rootImages],
+  );
 
   useEffect(() => {
-    if (!sheetOpen) {
-      form.reset(defaults);
-      setEditingItem(null);
-    }
-  }, [form, sheetOpen]);
+    if (!mediaQuery.data) return;
+    disposeEntityImageState(showcaseStateRef.current);
+    disposeLogoDraft(logoStateRef.current);
+    const nextShowcase = createEntityImageState(showcaseImages);
+    const nextLogo = createLogoDraft(rootLogo);
+    showcaseStateRef.current = nextShowcase;
+    logoStateRef.current = nextLogo;
+    setShowcaseState(nextShowcase);
+    setLogoState(nextLogo);
+  }, [mediaQuery.dataUpdatedAt, rootLogo, showcaseImages, mediaQuery.data]);
 
   const invalidate = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["business-management", businessId, "media"] }),
       queryClient.invalidateQueries({ queryKey: ["business-operations", businessId, "dashboard"] }),
-        queryClient.invalidateQueries({ queryKey: ["catalog", "business-detail", businessId] }),
-        queryClient.invalidateQueries({ queryKey: ["catalog", "business-menu", businessId] }),
-        queryClient.invalidateQueries({ queryKey: ["catalog", "businesses"] }),
-        queryClient.invalidateQueries({ queryKey: ["discovery", "home"] }),
+      queryClient.invalidateQueries({ queryKey: ["catalog", "business-detail", businessId] }),
+      queryClient.invalidateQueries({ queryKey: ["catalog", "business-menu", businessId] }),
+      queryClient.invalidateQueries({ queryKey: ["catalog", "businesses"] }),
+      queryClient.invalidateQueries({ queryKey: ["discovery", "home"] }),
     ]);
   };
 
-  const createMutation = useMutation({
-    mutationFn: (values: BusinessMediaAssetInput) => createBusinessMediaAsset(businessId, values),
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      const businessName = dashboardQuery.data?.business.name || "İşletme";
+      await syncEntityImages({
+        businessId,
+        target: {},
+        currentImages: showcaseImages,
+        nextState: showcaseStateRef.current,
+        defaultAltText: `${businessName} vitrin görseli`,
+      });
+
+      const currentLogoAssets = rootImages.filter((item) => item.asset_role === "LOGO");
+      const draft = logoStateRef.current;
+
+      if (!draft) {
+        await Promise.all(currentLogoAssets.map((asset) => deleteBusinessMediaAsset(businessId, asset.id)));
+        return;
+      }
+
+      if (draft.kind === "existing") {
+        await Promise.all(
+          currentLogoAssets
+            .filter((asset) => asset.id !== draft.asset.id)
+            .map((asset) => deleteBusinessMediaAsset(businessId, asset.id)),
+        );
+        return;
+      }
+
+      await uploadBusinessMediaAsset(businessId, buildUploadFormData(draft.file, "LOGO"));
+      await Promise.all(currentLogoAssets.map((asset) => deleteBusinessMediaAsset(businessId, asset.id)));
+    },
     onSuccess: async () => {
-      toast.success("Medya kaydı oluşturuldu.");
-      setSheetOpen(false);
+      toast.success("İşletme görselleri güncellendi.");
       await invalidate();
     },
-    onError: (error) => toast.error(getApiErrorMessage(error, "Medya kaydı oluşturulamadı.")),
-  });
-  const updateMutation = useMutation({
-    mutationFn: ({ id, values }: { id: number; values: Partial<BusinessMediaAssetInput> }) => updateBusinessMediaAsset(businessId, id, values),
-    onSuccess: async () => {
-      toast.success("Medya kaydı güncellendi.");
-      setSheetOpen(false);
-      await invalidate();
-    },
-    onError: (error) => toast.error(getApiErrorMessage(error, "Medya kaydı güncellenemedi.")),
-  });
-  const deleteMutation = useMutation({
-    mutationFn: (id: number) => deleteBusinessMediaAsset(businessId, id),
-    onSuccess: async () => {
-      toast.success("Medya kaydı silindi.");
-      await invalidate();
-    },
-    onError: (error) => toast.error(getApiErrorMessage(error, "Medya kaydı silinemedi.")),
+    onError: (error) => toast.error(getApiErrorMessage(error, "İşletme görselleri güncellenemedi.")),
   });
 
-  const summary = useMemo(() => {
-    const items = mediaQuery.data ?? [];
-    return {
-      total: items.length,
-      active: items.filter((item) => item.is_active).length,
-      images: items.filter((item) => item.media_type === "IMAGE").length,
-      businessRoot: items.filter((item) => item.business && !item.menu_item && !item.offer && !item.marketplace_category).length,
-    };
-  }, [mediaQuery.data]);
+  const summary = useMemo(
+    () => ({
+      total: rootImages.length,
+      gallery: showcaseImages.length,
+      hasCover: showcaseImages.some((item) => item.asset_role === "COVER" || item.asset_role === "THUMBNAIL"),
+      hasLogo: Boolean(rootLogo),
+    }),
+    [rootImages, showcaseImages, rootLogo],
+  );
 
-  const openCreate = () => {
-    form.reset(defaults);
-    setEditingItem(null);
-    setSheetOpen(true);
-  };
-
-  const openEdit = (item: BusinessMediaAsset) => {
-    setEditingItem(item);
-    form.reset({
-      target_type: item.menu_item ? "MENU_ITEM" : item.offer ? "OFFER" : "BUSINESS",
-      target_id: item.menu_item ?? item.offer ?? null,
-      file_url: item.file_url ?? "",
-      file_path: item.file_path ?? "",
-      media_type: item.media_type as FormValues["media_type"],
-      asset_role: item.asset_role as FormValues["asset_role"],
-      alt_text: item.alt_text ?? "",
-      sort_order: item.sort_order,
-      is_active: item.is_active,
-      metadata_file_size_bytes: Number(item.metadata?.file_size_bytes ?? 0),
-    });
-    setSheetOpen(true);
-  };
-
-  const onSubmit = (values: FormSubmitValues) => {
-    const payload = toPayload(values);
-    if (editingItem) {
-      updateMutation.mutate({ id: editingItem.id, values: payload });
-      return;
-    }
-    createMutation.mutate(payload);
-  };
-
-  const watchedTargetType = form.watch("target_type");
+  const isBusy = saveMutation.isPending;
 
   return (
     <PageContainer>
       <BusinessPanelShell businessId={hasValidBusinessId ? businessId : null}>
         <div className="space-y-6">
-          <SectionHeader title="Medya yönetimi" description="Upload akışı backend’de yoksa uydurma sistem kurmadan file_url / file_path kontratı üzerinden ilerler." />
+          <SectionHeader
+            title="İşletme görselleri"
+            description="Kapak, logo ve galeri fotoğraflarını gerçek dosya seçme akışıyla yönet. Burada link değil, doğrudan görsel deneyimi var."
+          />
 
-          {!hasValidBusinessId ? <ErrorState title="Geçersiz işletme" description="URL içindeki businessId okunamadı. Güvenli yönetim için işletme panelinden tekrar aç." /> : null}
-
-          {dashboardQuery.isPending || mediaQuery.isPending || menuItemsQuery.isPending || offersQuery.isPending ? <LoadingSkeleton /> : null}
-          {dashboardQuery.isError ? <ErrorState title="Yetki bilgisi yüklenemedi" description={`${getApiErrorMessage(dashboardQuery.error)}${getApiRequestId(dashboardQuery.error) ? ` · request_id: ${getApiRequestId(dashboardQuery.error)}` : ""}`} /> : null}
-          {mediaQuery.isError ? <ErrorState title="Medya listesi yüklenemedi" description={`${getApiErrorMessage(mediaQuery.error)}${getApiRequestId(mediaQuery.error) ? ` · request_id: ${getApiRequestId(mediaQuery.error)}` : ""}`} /> : null}
-
-          {dashboardQuery.data ? (
-            <ManagementToolbar
-              title="Medya varlıkları"
-              description="Business root, menu item veya offer hedeflerine bağlanan medya kayıtlarını yönet. Marketplace category hedefi backend’de var ama bu panel scope dışında bırakıldı."
-              action={<PrimaryButton onClick={openCreate} disabled={!canManage || !hasValidBusinessId || createMutation.isPending || updateMutation.isPending || deleteMutation.isPending}>Yeni medya</PrimaryButton>}
+          {!hasValidBusinessId ? (
+            <ErrorState
+              title="Geçersiz işletme"
+              description="URL içindeki işletme bilgisi okunamadı. İşletme paneline güvenli giriş yapıp sayfayı yeniden aç."
             />
           ) : null}
 
-          {mediaQuery.data ? (
-            <div className="grid gap-4 md:grid-cols-4">
-              <CrudCard title={`${summary.total} medya`} subtitle="Toplam kayıt" />
-              <CrudCard title={`${summary.active} aktif`} subtitle="is_active=true" />
-              <CrudCard title={`${summary.images} görsel`} subtitle="IMAGE tipi" />
-              <CrudCard title={`${summary.businessRoot} root asset`} subtitle="Doğrudan business'e bağlı" />
-            </div>
+          {dashboardQuery.isPending || (canManage && mediaQuery.isPending) ? <LoadingSkeleton /> : null}
+
+          {dashboardQuery.isError ? (
+            <ErrorState
+              title="Yetki ve işletme özeti yüklenemedi"
+              description={`${getApiErrorMessage(dashboardQuery.error)}${
+                getApiRequestId(dashboardQuery.error) ? ` · request_id: ${getApiRequestId(dashboardQuery.error)}` : ""
+              }`}
+            />
           ) : null}
 
-          {mediaQuery.data?.length ? (
-            <div className="space-y-4">
-              {mediaQuery.data.map((item) => (
-                <CrudCard
-                  key={item.id}
-                  title={item.asset_role}
-                  subtitle={`${item.media_type} · ${getTargetLabel(item)}`}
-                  badge={<span className={`rounded-full px-2 py-1 text-xs font-medium ${item.is_active ? "bg-emerald-100 text-emerald-700" : "bg-zinc-200 text-zinc-700"}`}>{item.is_active ? "Aktif" : "Pasif"}</span>}
-                  actions={
-                    <>
-                      <SecondaryButton onClick={() => openEdit(item)} disabled={!canManage || createMutation.isPending || updateMutation.isPending || deleteMutation.isPending}>Düzenle</SecondaryButton>
-                      <DangerButton onClick={() => deleteMutation.mutate(item.id)} disabled={!canManage || deleteMutation.isPending}>Sil</DangerButton>
-                    </>
-                  }
-                >
-                  <div className="grid gap-3 text-sm text-zinc-600 md:grid-cols-4">
-                    <div className="rounded-2xl bg-zinc-50 p-4">sort_order: {item.sort_order}</div>
-                    <div className="rounded-2xl bg-zinc-50 p-4">uploaded_by: {item.uploaded_by ?? "-"}</div>
-                    <div className="rounded-2xl bg-zinc-50 p-4">file_path: {item.file_path || "-"}</div>
-                    <div className="rounded-2xl bg-zinc-50 p-4">size: {item.metadata?.file_size_bytes ? `${String(item.metadata.file_size_bytes)} bytes` : "-"}</div>
-                  </div>
-                  {item.alt_text ? <p className="text-sm text-zinc-700">alt_text: {item.alt_text}</p> : null}
-                  {item.file_url ? <a href={item.file_url} target="_blank" rel="noreferrer" className="text-sm font-medium text-zinc-900 underline">Dosya URL</a> : null}
-                </CrudCard>
-              ))}
-            </div>
-          ) : mediaQuery.data && !mediaQuery.isPending ? <EmptyState title="Medya yok" description="İlk medya kaydını ekleyerek görsel/video/document içeriklerini bağlayabilirsin." /> : null}
-        </div>
+          {canManage && mediaQuery.isError ? (
+            <ErrorState
+              title="Görseller yüklenemedi"
+              description={`${getApiErrorMessage(mediaQuery.error)}${
+                getApiRequestId(mediaQuery.error) ? ` · request_id: ${getApiRequestId(mediaQuery.error)}` : ""
+              }`}
+            />
+          ) : null}
 
-        <Sheet open={sheetOpen} onClose={() => setSheetOpen(false)} title={editingItem ? "Medya düzenle" : "Yeni medya"} description="Manual URL/path odaklı kayıt. Gerçek upload endpoint’i olmadığı için dosya seçici uydurulmadı.">
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <Field label="Hedef tipi" error={form.formState.errors.target_type?.message}>
-              <Select value={watchedTargetType} onChange={(event) => { form.setValue("target_type", event.target.value as FormValues["target_type"]); form.setValue("target_id", null); }} disabled={!canManage}>
-                <option value="BUSINESS">Business root</option>
-                <option value="MENU_ITEM">Menü ürünü</option>
-                <option value="OFFER">Teklif</option>
-              </Select>
-            </Field>
-            {watchedTargetType !== "BUSINESS" ? (
-              <Field label="Hedef kayıt" error={form.formState.errors.target_id?.message as string | undefined}>
-                <Select value={form.watch("target_id") ?? ""} onChange={(event) => form.setValue("target_id", event.target.value ? Number(event.target.value) : null)} disabled={!canManage}>
-                  <option value="">Seçim yap</option>
-                  {watchedTargetType === "MENU_ITEM"
-                    ? (menuItemsQuery.data ?? []).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)
-                    : (offersQuery.data ?? []).map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
-                </Select>
-              </Field>
-            ) : null}
-            <div className="grid gap-4 md:grid-cols-2">
-              <Field label="file_url" error={form.formState.errors.file_url?.message}><TextInput {...form.register("file_url")} disabled={!canManage} /></Field>
-              <Field label="file_path" error={form.formState.errors.file_path?.message}><TextInput {...form.register("file_path")} disabled={!canManage} /></Field>
-            </div>
-            <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Medya tipi" error={form.formState.errors.media_type?.message}><Select {...form.register("media_type")} disabled={!canManage}>{mediaTypes.map((value) => <option key={value} value={value}>{value}</option>)}</Select></Field>
-              <Field label="Asset role" error={form.formState.errors.asset_role?.message}><Select {...form.register("asset_role")} disabled={!canManage}>{assetRoles.map((value) => <option key={value} value={value}>{value}</option>)}</Select></Field>
-            </div>
-            <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Alt text" error={form.formState.errors.alt_text?.message}><TextArea rows={3} {...form.register("alt_text")} disabled={!canManage} /></Field>
-              <div className="space-y-4">
-                <Field label="Sıralama" error={form.formState.errors.sort_order?.message}><TextInput type="number" {...form.register("sort_order", { valueAsNumber: true })} disabled={!canManage} /></Field>
-                <Field label="metadata.file_size_bytes" error={form.formState.errors.metadata_file_size_bytes?.message as string | undefined}><TextInput type="number" {...form.register("metadata_file_size_bytes", { valueAsNumber: true })} disabled={!canManage} /></Field>
+          {dashboardQuery.data && !canManage ? (
+            <EmptyState
+              title="Bu alanı yönetmek için yetkin yeterli değil"
+              description="İşletme görsellerini düzenleme alanı yönetici veya sahip rolüne açıktır."
+            />
+          ) : null}
+
+          {dashboardQuery.data && canManage ? (
+            <>
+              <div className="grid gap-4 xl:grid-cols-[1.08fr_0.92fr]">
+                <Card className="overflow-hidden border-stone-200 bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.12),_transparent_34%),linear-gradient(135deg,_rgba(255,255,255,0.98),_rgba(250,250,249,0.95))]">
+                  <CardContent className="space-y-5 p-6">
+                    <div className="flex items-start gap-3">
+                      <div className="rounded-2xl bg-zinc-950 p-2.5 text-white">
+                        <Building2 className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <h2 className="text-xl font-semibold tracking-tight text-zinc-950">
+                          İşletme vitrinini daha profesyonel göster
+                        </h2>
+                        <p className="mt-2 text-sm leading-6 text-zinc-600">
+                          Bu ekran kapak, logo ve galeri görsellerini tek merkezde toplar. Müşteri tarafında ilk güven hissini oluşturan bölüm tam olarak burasıdır.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                      <Card className="border-stone-200 bg-white"><CardContent className="space-y-2 p-4"><div className="text-xs font-medium uppercase tracking-[0.16em] text-zinc-500">Toplam görsel</div><div className="text-2xl font-semibold text-zinc-950">{summary.total}</div></CardContent></Card>
+                      <Card className="border-stone-200 bg-white"><CardContent className="space-y-2 p-4"><div className="text-xs font-medium uppercase tracking-[0.16em] text-zinc-500">Kapak</div><div className="text-2xl font-semibold text-zinc-950">{summary.hasCover ? "Hazır" : "Eksik"}</div></CardContent></Card>
+                      <Card className="border-stone-200 bg-white"><CardContent className="space-y-2 p-4"><div className="text-xs font-medium uppercase tracking-[0.16em] text-zinc-500">Logo</div><div className="text-2xl font-semibold text-zinc-950">{summary.hasLogo ? "Hazır" : "Eksik"}</div></CardContent></Card>
+                      <Card className="border-stone-200 bg-white"><CardContent className="space-y-2 p-4"><div className="text-xs font-medium uppercase tracking-[0.16em] text-zinc-500">Galeri</div><div className="text-2xl font-semibold text-zinc-950">{summary.gallery}</div></CardContent></Card>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="border-stone-200 bg-zinc-950 text-white">
+                  <CardContent className="space-y-4 p-6">
+                    <div className="flex items-center gap-2 text-sm font-medium text-zinc-200">
+                      <ShieldCheck className="h-4 w-4" />
+                      Görsel kalite notu
+                    </div>
+                    <div className="rounded-2xl bg-white/5 p-4 text-sm leading-6 text-zinc-200">
+                      Kapak görseli işletme kartını, logo kurumsal güveni, galeri ise detay ekranındaki ilk izlenimi güçlendirir. Burada yaptığın düzenleme müşteri tarafına doğrudan yansır.
+                    </div>
+                    <div className="grid gap-3">
+                      <div className="flex items-center justify-between rounded-2xl bg-white/5 px-4 py-3 text-sm">
+                        <span>Rolün</span>
+                        <span className="font-medium text-white">{dashboardQuery.data.business.member_role}</span>
+                      </div>
+                      <div className="flex items-center justify-between rounded-2xl bg-white/5 px-4 py-3 text-sm">
+                        <span>İşletme adı</span>
+                        <span className="font-medium text-white">{dashboardQuery.data.business.name}</span>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
-            </div>
-            <ToggleRow label="Aktif medya" description="Public serializer tarafında active filtrelerini etkiler." checked={form.watch("is_active")} onChange={(next) => form.setValue("is_active", next)} disabled={!canManage} />
-            <div className="flex flex-wrap gap-3 pt-2">
-              <PrimaryButton type="submit" disabled={!canManage || createMutation.isPending || updateMutation.isPending}>{createMutation.isPending || updateMutation.isPending ? "Kaydediliyor..." : editingItem ? "Güncelle" : "Oluştur"}</PrimaryButton>
-              <SecondaryButton type="button" onClick={() => setSheetOpen(false)}>Vazgeç</SecondaryButton>
-            </div>
-          </form>
-        </Sheet>
+
+              <ManagementToolbar
+                title="Vitrin düzeni"
+                description="Logo, kapak ve galeri görsellerini burada profesyonel şekilde yönetebilirsin."
+                action={
+                  <div className="flex flex-wrap gap-2">
+                    <SecondaryButton
+                      type="button"
+                      onClick={() => {
+                        disposeEntityImageState(showcaseStateRef.current);
+                        disposeLogoDraft(logoStateRef.current);
+                        const nextShowcase = createEntityImageState(showcaseImages);
+                        const nextLogo = createLogoDraft(rootLogo);
+                        showcaseStateRef.current = nextShowcase;
+                        logoStateRef.current = nextLogo;
+                        setShowcaseState(nextShowcase);
+                        setLogoState(nextLogo);
+                      }}
+                      disabled={isBusy}
+                    >
+                      Değişiklikleri sıfırla
+                    </SecondaryButton>
+                    <PrimaryButton type="button" onClick={() => saveMutation.mutate()} disabled={isBusy}>
+                      {isBusy ? "Kaydediliyor..." : "Görselleri kaydet"}
+                    </PrimaryButton>
+                  </div>
+                }
+              />
+
+              <div className="grid gap-5 xl:grid-cols-[0.78fr_1.22fr]">
+                <Card className="border-stone-200 bg-white">
+                  <CardContent className="space-y-4 p-5">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-zinc-950">
+                        <Sparkles className="h-4 w-4" />
+                        Kurumsal logo
+                      </div>
+                      <p className="text-sm leading-6 text-zinc-600">
+                        İşletme kartında ve bazı öne çıkan alanlarda kullanılacak görsel kimlik.
+                      </p>
+                    </div>
+
+                    {logoState ? (
+                      <div className="overflow-hidden rounded-[28px] border border-zinc-200 bg-white shadow-sm">
+                        <div className="aspect-square bg-zinc-100">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={logoState.previewUrl} alt="İşletme logosu" className="h-full w-full object-contain p-5" />
+                        </div>
+                        <div className="flex items-center justify-between gap-3 border-t border-zinc-100 px-4 py-3">
+                          <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-zinc-950 px-4 py-2 text-sm font-medium text-white">
+                            <UploadCloud className="h-4 w-4" />
+                            Logo değiştir
+                            <input
+                              type="file"
+                              accept="image/png,image/jpeg,image/webp,image/gif"
+                              className="hidden"
+                              disabled={isBusy}
+                              onChange={(event) => {
+                                const file = readFirstImage(event.target.files);
+                                event.currentTarget.value = "";
+                                if (!file) return;
+                                disposeLogoDraft(logoStateRef.current);
+                                const next = createNewLogoDraft(file);
+                                logoStateRef.current = next;
+                                setLogoState(next);
+                              }}
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              disposeLogoDraft(logoStateRef.current);
+                              logoStateRef.current = null;
+                              setLogoState(null);
+                            }}
+                            disabled={isBusy}
+                            className="inline-flex items-center gap-2 rounded-xl bg-red-50 px-3 py-2 text-sm font-medium text-red-700"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            Kaldır
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <label className="flex cursor-pointer flex-col items-center justify-center gap-3 rounded-[28px] border border-dashed border-zinc-300 bg-zinc-50 px-6 py-12 text-center">
+                        <div className="rounded-2xl bg-white p-3 text-zinc-700 shadow-sm">
+                          <ImagePlus className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-zinc-900">Logo yükle</p>
+                          <p className="mt-1 text-xs leading-5 text-zinc-500">Şeffaf arka planlı PNG ya da net bir kare görsel önerilir.</p>
+                        </div>
+                        <input
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp,image/gif"
+                          className="hidden"
+                          disabled={isBusy}
+                          onChange={(event) => {
+                            const file = readFirstImage(event.target.files);
+                            event.currentTarget.value = "";
+                            if (!file) return;
+                            const next = createNewLogoDraft(file);
+                            logoStateRef.current = next;
+                            setLogoState(next);
+                          }}
+                        />
+                      </label>
+                    )}
+                  </CardContent>
+                </Card>
+
+                <EntityImageManager
+                  value={showcaseState}
+                  onChange={setShowcaseState}
+                  disabled={isBusy}
+                  title="Kapak ve galeri fotoğrafları"
+                  description="İşletme kartında kullanılacak kapak görselini ve detay ekranındaki galeri fotoğraflarını bu alandan yönet."
+                />
+              </div>
+            </>
+          ) : null}
+        </div>
       </BusinessPanelShell>
     </PageContainer>
   );

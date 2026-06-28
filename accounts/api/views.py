@@ -6,6 +6,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
+from drf_spectacular.utils import extend_schema
 
 from businesses.models import BusinessMember
 from orders.throttles import LoginRateThrottle
@@ -31,21 +32,49 @@ class AuthMeBusinessSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     name = serializers.CharField()
     member_role = serializers.CharField()
+    access_halkyemek = serializers.BooleanField()
+    access_halktasarruf = serializers.BooleanField()
+    supports_halkyemek = serializers.BooleanField()
+    supports_halktasarruf = serializers.BooleanField()
+
+
+class AuthMeUserSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    username = serializers.CharField()
+    google_email = serializers.EmailField(allow_blank=True)
+    role = serializers.CharField()
+
+
+class AuthMeDataSerializer(serializers.Serializer):
+    user = AuthMeUserSerializer()
+    has_business_membership = serializers.BooleanField()
+    business_membership_count = serializers.IntegerField()
+    businesses = AuthMeBusinessSerializer(many=True)
 
 
 class AuthMeResponseSerializer(serializers.Serializer):
     ok = serializers.BooleanField()
-    data = serializers.DictField()
+    data = AuthMeDataSerializer()
 
 
 class AuthMeView(APIView):
     permission_classes = [IsAuthenticated]
+    serializer_class = AuthMeResponseSerializer
 
+    @extend_schema(operation_id="auth_me", responses={200: AuthMeResponseSerializer}, tags=["auth"])
     def get(self, request):
         memberships = list(
             BusinessMember.objects.filter(user=request.user, is_active=True)
             .select_related("business")
-            .values("business_id", "business__business_name", "role")
+            .values(
+                "business_id",
+                "business__business_name",
+                "role",
+                "access_halkyemek",
+                "access_halktasarruf",
+                "business__supports_halkyemek",
+                "business__supports_halktasarruf",
+            )
             .order_by("business__business_name", "business_id")
         )
 
@@ -66,6 +95,10 @@ class AuthMeView(APIView):
                             "id": row["business_id"],
                             "name": row["business__business_name"],
                             "member_role": row["role"],
+                            "access_halkyemek": row["access_halkyemek"],
+                            "access_halktasarruf": row["access_halktasarruf"],
+                            "supports_halkyemek": row["business__supports_halkyemek"],
+                            "supports_halktasarruf": row["business__supports_halktasarruf"],
                         }
                         for row in memberships
                     ],

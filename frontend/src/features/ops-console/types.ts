@@ -10,6 +10,47 @@ export interface OpsMetricsData {
   payouts_by_status: Record<string, number>;
 }
 
+export interface OpsPaymentIntentItem {
+  id: number;
+  provider: string;
+  purpose: string;
+  amount: number;
+  status: string;
+  provider_payment_id?: string | null;
+  provider_session_token?: string;
+  provider_page_url?: string;
+  normalized_status?: string;
+  is_processed: boolean;
+  processed_at?: string | null;
+  processing_error?: string | null;
+  is_settled: boolean;
+  settled_at?: string | null;
+  marketplace_conversation_id?: string;
+  payment_reference?: string;
+  manual_payment_account_name?: string;
+  manual_payment_iban?: string;
+  manual_payment_instructions?: string[];
+  user_id?: number;
+  username?: string;
+  email?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface OpsPaymentIntentListResponse {
+  count: number;
+  results: OpsPaymentIntentItem[];
+  summary: Record<string, number>;
+}
+
+export interface OpsManualTopupConfirmResponse {
+  intent: OpsPaymentIntentItem;
+  provider_event_id: string;
+  wallet_transaction_id: number | null;
+  wallet_balance: number;
+  already_confirmed: boolean;
+}
+
 export interface OpsBusinessContact {
   email?: string | null;
   full_name?: string | null;
@@ -21,6 +62,12 @@ export interface OpsBusinessListItem {
   business_name: string;
   category: string;
   district: string;
+  supports_halkyemek: boolean;
+  supports_halktasarruf: boolean;
+  address_line?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  google_maps_url?: string | null;
   listing_type: string;
   is_featured: boolean;
   display_priority: number;
@@ -30,6 +77,11 @@ export interface OpsBusinessListItem {
   marketplace_is_visible: boolean;
   payout_onboarding_status: string;
   iyzico_submerchant_key?: string | null;
+  kyc_contact_name?: string | null;
+  kyc_contact_surname?: string | null;
+  kyc_identity_number?: string | null;
+  kyc_tax_number?: string | null;
+  kyc_iban?: string | null;
   active_membership_count: number;
   contact?: OpsBusinessContact | null;
 }
@@ -39,6 +91,41 @@ export interface OpsBusinessesListResponse {
   results: OpsBusinessListItem[];
 }
 
+export interface OpsBusinessCreateInput {
+  business_name: string;
+  category: string;
+  supports_halkyemek?: boolean;
+  supports_halktasarruf?: boolean;
+  adress?: string;
+  address_line?: string | null;
+  latitude?: string | number | null;
+  longitude?: string | number | null;
+  google_maps_url?: string | null;
+  district?: string;
+  listing_type?: string;
+  is_active?: boolean;
+  is_approved?: boolean;
+  is_listed?: boolean;
+  marketplace_is_visible?: boolean;
+  is_featured?: boolean;
+  display_priority?: number;
+  short_description?: string;
+  intro_text?: string;
+  badge_text?: string;
+  kyc_contact_name?: string;
+  kyc_contact_surname?: string;
+  kyc_identity_number?: string;
+  kyc_tax_number?: string;
+  kyc_iban?: string;
+  contact_user_id?: number | null;
+  owner_user_id?: number | null;
+  owner_role?: string;
+}
+
+export interface OpsBusinessCreateResponse extends OpsBusinessListItem {
+  adress?: string;
+}
+
 export interface OpsBusinessMembership {
   id: number;
   user_id: number;
@@ -46,6 +133,8 @@ export interface OpsBusinessMembership {
   email?: string;
   role: string;
   is_active?: boolean;
+  access_halkyemek?: boolean;
+  access_halktasarruf?: boolean;
   granted_by_id?: number | null;
   granted_by_username?: string;
   created_at?: string;
@@ -57,36 +146,64 @@ export interface OpsBusinessDetail {
   business_name: string;
   category: string;
   district: string;
+  supports_halkyemek: boolean;
+  supports_halktasarruf: boolean;
   listing_type: string;
   is_featured: boolean;
   display_priority: number;
   adress?: string;
+  address_line?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  google_maps_url?: string | null;
   is_active: boolean;
   is_approved: boolean;
   is_listed: boolean;
   marketplace_is_visible: boolean;
   payout_onboarding_status: string;
   payout_onboarding_note?: string | null;
+  kyc_contact_name?: string | null;
+  kyc_contact_surname?: string | null;
+  kyc_identity_number?: string | null;
+  kyc_tax_number?: string | null;
+  kyc_iban?: string | null;
   contact?: OpsBusinessContact | null;
   iyzico_onboarding: Record<string, unknown>;
   memberships: OpsBusinessMembership[];
 }
 
 export interface OpsBusinessMembershipUpsertInput {
-  user_id: number;
+  user_id?: number;
+  email?: string;
   role: string;
   is_active?: boolean;
+  access_halkyemek?: boolean;
+  access_halktasarruf?: boolean;
 }
 
 export interface OpsBusinessStatusInput {
+  business_name?: string;
+  category?: string;
+  supports_halkyemek?: boolean;
+  supports_halktasarruf?: boolean;
+  adress?: string;
   is_active?: boolean;
   is_approved?: boolean;
   is_listed?: boolean;
   listing_type?: string;
   is_featured?: boolean;
   display_priority?: number;
+  address_line?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  google_maps_url?: string | null;
   marketplace_is_visible?: boolean;
   payout_onboarding_note?: string;
+  kyc_contact_name?: string;
+  kyc_contact_surname?: string;
+  kyc_identity_number?: string;
+  kyc_tax_number?: string;
+  kyc_iban?: string;
 }
 
 export interface PayoutItem {
@@ -211,4 +328,117 @@ export interface BroadcastInput {
   audience?: string;
   district?: string;
   payload?: Record<string, unknown>;
+}
+
+export type EmailBroadcastAudience = "ALL" | "CUSTOMERS" | "BUSINESS_MEMBERS";
+
+export interface EmailBroadcastPayload {
+  subject: string;
+  message: string;
+  audience?: EmailBroadcastAudience;
+  district?: string;
+  dry_run?: boolean;
+}
+
+export interface EmailBroadcastPreviewResponse {
+  broadcast_id: string;
+  estimated_count: number;
+  dry_run: true;
+  task_id?: string;
+}
+
+export interface EmailBroadcastQueueResponse {
+  broadcast_id: string;
+  estimated_count: number;
+  dry_run: false;
+  task_id: string;
+}
+
+export type OpsSurpriseDealStatus = "DRAFT" | "ACTIVE" | "PAUSED" | "CLOSED" | "EXPIRED" | "CANCELLED";
+
+export interface OpsSurpriseDealBusinessSummary {
+  id: number;
+  name: string;
+  district: string;
+  is_active?: boolean;
+  is_approved?: boolean;
+  is_listed?: boolean;
+  marketplace_is_visible?: boolean;
+}
+
+export interface OpsSurpriseDealItem {
+  id: number;
+  title: string;
+  business: OpsSurpriseDealBusinessSummary;
+  business_name: string;
+  district: string;
+  status: OpsSurpriseDealStatus | string;
+  sale_price_amount: number;
+  original_value_amount: number;
+  currency: string;
+  quantity_total: number;
+  quantity_remaining: number;
+  quantity_reserved: number;
+  pickup_window_start: string;
+  pickup_window_end: string;
+  created_at: string;
+  published_at?: string | null;
+  closed_at?: string | null;
+  reservation_count: number;
+  committed_count: number;
+  expired_count: number;
+  cancelled_count: number;
+}
+
+export interface OpsSurpriseDealListResponse {
+  count: number;
+  results: OpsSurpriseDealItem[];
+}
+
+export interface OpsSurpriseDealReservationSummary {
+  total: number;
+  reserved: number;
+  committed: number;
+  released: number;
+  expired: number;
+  cancelled: number;
+  by_status: Record<string, number>;
+}
+
+export interface OpsSurpriseDealReservationItem {
+  id: number;
+  status: string;
+  quantity: number;
+  user_id: number;
+  username?: string;
+  checkout_session_id?: number | null;
+  checkout_session_status?: string | null;
+  order_id?: number | null;
+  order_status?: string | null;
+  reserved_at?: string | null;
+  committed_at?: string | null;
+  released_at?: string | null;
+  expires_at?: string | null;
+  created_at?: string | null;
+}
+
+export interface OpsSurpriseDealOrderItem {
+  id: number;
+  status: string;
+  user_id: number;
+  username?: string;
+  amount: number;
+  total_charged_amount: number;
+  paid_at?: string | null;
+  used_at?: string | null;
+  created_at?: string | null;
+  checkout_session_id?: number | null;
+}
+
+export interface OpsSurpriseDealDetailResponse {
+  deal: OpsSurpriseDealItem;
+  business: OpsSurpriseDealBusinessSummary;
+  reservation_summary: OpsSurpriseDealReservationSummary;
+  recent_reservations: OpsSurpriseDealReservationItem[];
+  recent_orders: OpsSurpriseDealOrderItem[];
 }

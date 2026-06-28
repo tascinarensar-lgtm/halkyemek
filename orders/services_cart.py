@@ -10,6 +10,11 @@ from django.utils import timezone
 from menus.models import MenuItem
 from orders.models import Cart, CartItem, CheckoutSession
 from orders.services_pricing import PricingBreakdown, build_checkout_pricing_breakdown
+from orders.services_quota import (
+    assert_menu_item_quota_available,
+    build_quota_snapshot_for_menu_item,
+    release_quota_for_checkout_session,
+)
 
 
 class CartError(Exception):
@@ -54,6 +59,7 @@ class CartService:
 
         session.status = CheckoutSession.Status.EXPIRED
         session.save(update_fields=["status", "updated_at"])
+        release_quota_for_checkout_session(session=session)
 
         cart = session.cart
         has_other_active_cart = Cart.objects.filter(user=user, status=Cart.Status.ACTIVE).exclude(id=cart.id).exists()
@@ -123,6 +129,7 @@ class CartService:
         subtotal = 0
         for item in items:
             CartService._ensure_menu_item_is_orderable(menu_item=item.menu_item)
+            assert_menu_item_quota_available(menu_item=item.menu_item, quantity=int(item.quantity))
             item.menu_item_name = item.menu_item.name
             item.unit_price_amount = int(item.menu_item.price_amount)
             item.line_total_amount = int(item.unit_price_amount) * int(item.quantity)
@@ -132,6 +139,8 @@ class CartService:
                 "category_id": int(item.menu_item.category_id),
                 "name": item.menu_item.name,
                 "price_amount": int(item.menu_item.price_amount),
+                "image_url": item.menu_item.image_url or "",
+                **build_quota_snapshot_for_menu_item(item.menu_item),
             }
             item.save(update_fields=[
                 "menu_item_name",
@@ -169,7 +178,22 @@ class CartService:
         existing = CartService._get_active_cart(user=user, for_update=True)
         if existing is not None:
             if int(existing.business_id) != int(business.id):
-                raise CrossBusinessCartError("Active cart belongs to another business")
+                if not existing.cart_items.exists():
+                    existing.business = business
+                    existing.subtotal_amount = 0
+                    existing.customer_fee_amount = 0
+                    existing.total_amount = 0
+                    existing.snapshot = {"pricing": None, "item_count": 0, "items": []}
+                    existing.save(update_fields=[
+                        "business",
+                        "subtotal_amount",
+                        "customer_fee_amount",
+                        "total_amount",
+                        "snapshot",
+                        "updated_at",
+                    ])
+                    return existing
+                raise CrossBusinessCartError("Sepetteki ürünler farklı işletmeye aittir. Tek bir işletme ile sepetinizi doldurabilirsiniz.")
             return existing
 
         return Cart.objects.create(
@@ -193,6 +217,9 @@ class CartService:
         cart = CartService.get_or_create_active_cart(user=user, business=menu_item.business)
 
         cart_item = cart.cart_items.select_for_update().filter(menu_item=menu_item).first()
+        next_quantity = quantity if cart_item is None else int(cart_item.quantity) + quantity
+        assert_menu_item_quota_available(menu_item=menu_item, quantity=next_quantity)
+
         if cart_item is None:
             max_sort_order = int(cart.cart_items.aggregate(mx=models.Max("sort_order"))["mx"] or 0)
             CartItem.objects.create(
@@ -205,7 +232,7 @@ class CartService:
                 sort_order=max_sort_order + 1,
             )
         else:
-            cart_item.quantity = int(cart_item.quantity) + quantity
+            cart_item.quantity = next_quantity
             cart_item.save(update_fields=["quantity", "updated_at"])
 
         return CartService.recompute_active_cart(cart=cart)
@@ -225,6 +252,7 @@ class CartService:
         if item is None:
             raise CartError("Cart item not found")
 
+        assert_menu_item_quota_available(menu_item=item.menu_item, quantity=quantity)
         item.quantity = quantity
         item.save(update_fields=["quantity", "updated_at"])
         return CartService.recompute_active_cart(cart=cart)

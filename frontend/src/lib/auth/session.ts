@@ -24,6 +24,10 @@ function sanitizeSessionState(input: unknown): SessionState | null {
           id: typeof item.id === "number" ? item.id : Number(item.id),
           name: typeof item.name === "string" ? item.name : "",
           member_role: typeof item.member_role === "string" ? item.member_role : "",
+          access_halkyemek: Boolean(item.access_halkyemek),
+          access_halktasarruf: Boolean(item.access_halktasarruf),
+          supports_halkyemek: Boolean(item.supports_halkyemek),
+          supports_halktasarruf: Boolean(item.supports_halktasarruf),
         }))
         .filter((item) => Number.isInteger(item.id) && item.id > 0 && item.name.length > 0)
     : [];
@@ -46,9 +50,17 @@ function sanitizeSessionState(input: unknown): SessionState | null {
   }
 
   const preferredBusinessId = typeof candidate.activeBusinessId === "number" ? candidate.activeBusinessId : null;
-  const activeBusinessId = businesses.some((item) => item.id === preferredBusinessId)
+  const preferredHalkTasarrufBusinessId =
+    typeof candidate.activeHalkTasarrufBusinessId === "number" ? candidate.activeHalkTasarrufBusinessId : null;
+
+  const activeBusinessId = businesses.some((item) => item.id === preferredBusinessId && item.supports_halkyemek && item.access_halkyemek)
     ? preferredBusinessId
-    : businesses[0]?.id ?? null;
+    : businesses.find((item) => item.supports_halkyemek && item.access_halkyemek)?.id ?? null;
+  const activeHalkTasarrufBusinessId = businesses.some(
+    (item) => item.id === preferredHalkTasarrufBusinessId && item.supports_halktasarruf && item.access_halktasarruf,
+  )
+    ? preferredHalkTasarrufBusinessId
+    : businesses.find((item) => item.supports_halktasarruf && item.access_halktasarruf)?.id ?? null;
 
   return {
     isAuthenticated: true,
@@ -61,6 +73,7 @@ function sanitizeSessionState(input: unknown): SessionState | null {
     businesses,
     hasBusinessMembership: Boolean(candidate.hasBusinessMembership ?? businesses.length > 0),
     activeBusinessId,
+    activeHalkTasarrufBusinessId,
   };
 }
 
@@ -70,14 +83,22 @@ function canFallbackToCachedSession(error: unknown) {
 
 async function rebuildAuthoritativeSession(accessToken: string, previousSession?: SessionState | null) {
   const backendSession = await fetchBackendSession(accessToken);
-  const nextSession = buildSessionState(backendSession, previousSession?.activeBusinessId);
+  const nextSession = buildSessionState(
+    backendSession,
+    previousSession?.activeBusinessId,
+    previousSession?.activeHalkTasarrufBusinessId,
+  );
   await setSessionCookie(nextSession);
   return nextSession;
 }
 
 async function resolveAuthoritativeSession(accessToken: string, previousSession?: SessionState | null) {
   const backendSession = await fetchBackendSession(accessToken);
-  return buildSessionState(backendSession, previousSession?.activeBusinessId);
+  return buildSessionState(
+    backendSession,
+    previousSession?.activeBusinessId,
+    previousSession?.activeHalkTasarrufBusinessId,
+  );
 }
 
 async function refreshAndRebuild(refreshToken: string, previousSession?: SessionState | null) {

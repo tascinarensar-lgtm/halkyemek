@@ -6,6 +6,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { getRoleLabel } from "@/components/business/business-role";
+import type { BusinessWorkspace } from "@/features/business-operations/session";
 import { getApiErrorMessage, parseJsonResponse } from "@/lib/api/errors";
 import { SESSION_QUERY_KEY } from "@/lib/query/keys";
 import type { BusinessMembershipSummary, SessionState } from "@/types/auth";
@@ -15,11 +16,13 @@ export function BusinessSwitcher({
   activeBusinessId,
   redirectBase = "/isletme",
   compact = false,
+  workspace = "halkyemek",
 }: {
   businesses: BusinessMembershipSummary[];
   activeBusinessId: number | null;
   redirectBase?: string;
   compact?: boolean;
+  workspace?: BusinessWorkspace;
 }) {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -29,13 +32,11 @@ export function BusinessSwitcher({
     if (!nextBusinessId) return;
 
     const nextId = Number(nextBusinessId);
-    if (!Number.isFinite(nextId) || nextId === activeBusinessId) {
-      return;
-    }
+    if (!Number.isFinite(nextId) || nextId === activeBusinessId) return;
 
     const matchedBusiness = businesses.find((item) => item.id === nextId);
     if (!matchedBusiness) {
-      toast.error("Seçilen işletme bu oturumda görünmüyor. Oturumu yenileyip tekrar deneyin.");
+      toast.error("Seçilen işletme bu oturumda görünmüyor.");
       return;
     }
 
@@ -43,13 +44,11 @@ export function BusinessSwitcher({
       const response = await fetch("/api/auth/session/business", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ businessId: nextId }),
+        body: JSON.stringify({ businessId: nextId, workspace }),
       });
       const payload = await parseJsonResponse<SessionState | { ok?: boolean; error?: unknown }>(response);
 
-      if (!response.ok || !payload) {
-        throw payload ?? new Error("Aktif işletme güncellenemedi.");
-      }
+      if (!response.ok || !payload) throw payload ?? new Error("Aktif işletme güncellenemedi.");
 
       queryClient.setQueryData(SESSION_QUERY_KEY, payload as SessionState);
       await queryClient.invalidateQueries({ queryKey: ["business-operations"] });
@@ -79,11 +78,6 @@ export function BusinessSwitcher({
           </option>
         ))}
       </select>
-      {businesses.length === 1 ? (
-        <p className="text-xs text-zinc-500">Bu hesap için tek işletme erişimi açık. Panel bu işletme üzerinden devam eder.</p>
-      ) : (
-        <p className="text-xs text-zinc-500">Seçimi değiştirdiğinde işletme paneli yeni işletme üzerinden açılır.</p>
-      )}
     </div>
   );
 }

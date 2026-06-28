@@ -42,20 +42,15 @@ export function NotificationReadinessBanner({ readiness }: { readiness: Notifica
         queryClient.invalidateQueries({ queryKey: ["topup"] }),
         queryClient.invalidateQueries({ queryKey: ["orders"] }),
       ]);
-      toast.success("Bildirim ayarlari guncellendi.");
+      toast.success("Bildirim ayarÄ± gÃ¼ncellendi.");
     },
-    onError: (error) => toast.error(getApiErrorMessage(error, "Bildirim ayarlari guncellenemedi.")),
+    onError: (error) => toast.error(getApiErrorMessage(error, "Bildirim ayarÄ± gÃ¼ncellenemedi.")),
   });
 
   const browserPresentation = getBrowserPermissionPresentation(browserStateQuery.data);
   const browserGuidance = getBrowserGuidance(browserStateQuery.data);
 
-  const helperMessage = useMemo(() => {
-    if (readiness?.message) {
-      return readiness.message;
-    }
-    return browserPresentation.description;
-  }, [browserPresentation.description, readiness?.message]);
+  const helperMessage = useMemo(() => browserPresentation.description, [browserPresentation.description]);
 
   if (!readiness || readiness.notification_ready || dismissed) {
     return null;
@@ -66,12 +61,12 @@ export function NotificationReadinessBanner({ readiness }: { readiness: Notifica
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex items-start gap-3">
           <div className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-100 text-amber-700">
-            {browserPresentation.label === "Izin kapali" ? <ShieldAlert className="h-5 w-5" /> : <BellOff className="h-5 w-5" />}
+            {browserPresentation.label === "Ä°zin kapalÄ±" ? <ShieldAlert className="h-5 w-5" /> : <BellOff className="h-5 w-5" />}
           </div>
           <div className="space-y-2">
-            <h2 className="text-sm font-semibold text-amber-950">Bildirim hazirligini tamamla</h2>
+            <h2 className="text-sm font-semibold text-amber-950">Bildirimleri aÃ§arak gÃ¼ncel kal</h2>
             <p className="max-w-3xl text-sm leading-6 text-amber-900">
-              Siparis, bakiye ve onemli duyurulari kacirmamak icin bu cihazin bildirim izni acik ve kayitli olmalidir.
+              Bildirimleri aÃ§arsanÄ±z sipariÅŸ durumlarÄ±, bakiye hareketleri ve fÄ±rsatlar hakkÄ±nda anlÄ±k bilgi alabilirsiniz.
             </p>
             <p className="text-sm leading-6 text-amber-800">{helperMessage}</p>
             {browserGuidance ? (
@@ -85,9 +80,9 @@ export function NotificationReadinessBanner({ readiness }: { readiness: Notifica
               </div>
             ) : null}
             <p className="text-xs text-amber-700">
-              Aktif cihaz sayisi: {readiness.active_device_count}
+              Aktif cihaz: {readiness.active_device_count}
               {typeof readiness.active_permitted_device_count === "number"
-                ? ` • Izinli cihaz: ${readiness.active_permitted_device_count}`
+                ? ` â€¢ Ä°zinli cihaz: ${readiness.active_permitted_device_count}`
                 : ""}
             </p>
           </div>
@@ -102,7 +97,7 @@ export function NotificationReadinessBanner({ readiness }: { readiness: Notifica
               className="inline-flex items-center gap-2 rounded-xl bg-zinc-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:opacity-60"
             >
               {registerMutation.isPending ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Bell className="h-4 w-4" />}
-              Bu cihazi hazirla
+              Bu cihazÄ± hazÄ±rla
             </button>
           ) : null}
           <button
@@ -110,7 +105,7 @@ export function NotificationReadinessBanner({ readiness }: { readiness: Notifica
             onClick={() => setDismissed(true)}
             className="rounded-xl bg-white px-4 py-2 text-sm font-medium text-amber-900 ring-1 ring-amber-200 transition hover:bg-amber-100"
           >
-            Simdilik kapat
+            Åžimdilik kapat
           </button>
         </div>
       </div>

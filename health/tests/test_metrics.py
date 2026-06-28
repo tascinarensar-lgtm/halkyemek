@@ -20,7 +20,13 @@ class MetricsTests(TestCase):
         self.assertIn("halkyemek_release_info", resp.content.decode("utf-8"))
         self.assertIn("halkyemek_runtime_check_ok", resp.content.decode("utf-8"))
 
-    @override_settings(DEBUG=False, TESTING=False, METRICS_TOKEN="secret-token")
+    @override_settings(
+        DEBUG=False,
+        TESTING=False,
+        METRICS_TOKEN="secret-token",
+        METRICS_IP_ALLOWLIST=[],
+        METRICS_ALLOW_QUERY_TOKEN=False,
+    )
     def test_metrics_endpoint_disallows_query_token_in_non_debug(self):
         resp = self.client.get("/health/metrics/")
         self.assertEqual(resp.status_code, 403)

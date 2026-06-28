@@ -18,6 +18,18 @@ from test_support import create_user
 
 class SettlementIngestionOpsTests(TestCase):
     def setUp(self):
+        self._settlement_tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._settlement_tmp.cleanup)
+        self.settlement_upload_dir = os.path.join(self._settlement_tmp.name, "uploads")
+        self.settlement_inbox_dir = os.path.join(self._settlement_tmp.name, "inbox")
+        self.settlement_archive_dir = os.path.join(self._settlement_tmp.name, "archive")
+        settings_override = override_settings(
+            SETTLEMENT_IMPORT_UPLOAD_DIR=self.settlement_upload_dir,
+            SETTLEMENT_IMPORT_INBOX_DIR=self.settlement_inbox_dir,
+            SETTLEMENT_IMPORT_ARCHIVE_DIR=self.settlement_archive_dir,
+        )
+        settings_override.enable()
+        self.addCleanup(settings_override.disable)
         self.client = APIClient()
         self.admin = create_user(username="settlement-admin", role=User.Role.ADMIN, is_staff=True)
         self.customer = create_user(username="settlement-customer")
@@ -44,7 +56,6 @@ class SettlementIngestionOpsTests(TestCase):
             os.unlink(path)
         self.assertEqual(SettlementImport.objects.count(), 1)
 
-    @override_settings(SETTLEMENT_IMPORT_UPLOAD_DIR="/tmp/hy_settlement_uploads_test")
     def test_ops_upload_endpoint_creates_registry_and_import_detail(self):
         self.client.force_authenticate(self.admin)
         upload = SimpleUploadedFile(
@@ -64,8 +75,7 @@ class SettlementIngestionOpsTests(TestCase):
         self.assertEqual(settlement_import.applied_status, SettlementImport.AppliedStatus.APPLIED)
         self.assertEqual(SettlementRecord.objects.filter(settlement_import=settlement_import).count(), 1)
 
-
-    @override_settings(SETTLEMENT_IMPORT_UPLOAD_DIR="/tmp/hy_settlement_uploads_test", SETTLEMENT_IMPORT_UPLOAD_MAX_BYTES=8)
+    @override_settings(SETTLEMENT_IMPORT_UPLOAD_MAX_BYTES=8)
     def test_ops_upload_endpoint_rejects_oversized_file(self):
         self.client.force_authenticate(self.admin)
         upload = SimpleUploadedFile(
@@ -82,7 +92,6 @@ class SettlementIngestionOpsTests(TestCase):
         self.assertEqual(SettlementImport.objects.count(), 0)
         self.assertEqual(response.json()["error"]["code"], "settlement_import_failed")
 
-    @override_settings(SETTLEMENT_IMPORT_UPLOAD_DIR="/tmp/hy_settlement_uploads_test")
     def test_ops_upload_endpoint_rejects_duplicate_file_with_existing_import_payload(self):
         self.client.force_authenticate(self.admin)
         payload = self._csv_bytes([
@@ -100,7 +109,6 @@ class SettlementIngestionOpsTests(TestCase):
         self.assertIn("existing_import", second.json()["data"])
         self.assertGreaterEqual(second.json()["data"]["existing_import"]["duplicate_attempts"], 1)
 
-    @override_settings(SETTLEMENT_IMPORT_UPLOAD_DIR="/tmp/hy_settlement_uploads_test")
     def test_ops_upload_endpoint_requires_admin(self):
         self.client.force_authenticate(self.customer)
         upload = SimpleUploadedFile("settlement.csv", self._csv_bytes([]), content_type="text/csv")
@@ -126,7 +134,6 @@ class SettlementIngestionOpsTests(TestCase):
         settlement_import = SettlementImport.objects.get()
         self.assertTrue(any(item.get("event") == "duplicate_rejected" for item in settlement_import.lifecycle_events))
 
-    @override_settings(SETTLEMENT_IMPORT_UPLOAD_DIR="/tmp/hy_settlement_uploads_test")
     def test_upload_records_checksum_verification_and_lifecycle_events(self):
         self.client.force_authenticate(self.admin)
         upload = SimpleUploadedFile(
@@ -195,7 +202,7 @@ class SettlementIngestionOpsTests(TestCase):
             provider="IYZICO",
             source_type=SettlementImport.SourceType.COMMAND,
             checksum_sha256="a" * 64,
-            storage_path="/tmp/settlement.csv",
+            storage_path=os.path.join(self.settlement_upload_dir, "settlement.csv"),
         )
         execute_import.return_value = type("Summary", (), {"__dict__": {"created": 1, "duplicates": 0, "processed": 1, "errors": 0, "skipped": 0, "total_rows": 1, "unmatched": 0}})()
         from payments.tasks import process_settlement_import_task
@@ -226,14 +233,13 @@ class SettlementIngestionOpsTests(TestCase):
         self.assertEqual(payload["summary"]["stale_manual_review"], 1)
         self.assertEqual(payload["results"][0]["next_action"], "manual_review")
 
-    @override_settings(SETTLEMENT_IMPORT_INBOX_DIR="/tmp/hy_settlement_inbox", SETTLEMENT_IMPORT_ARCHIVE_DIR="/tmp/hy_settlement_archive")
     def test_inbox_import_treats_duplicate_as_archived_duplicate_not_failure(self):
-        os.makedirs("/tmp/hy_settlement_inbox", exist_ok=True)
-        os.makedirs("/tmp/hy_settlement_archive", exist_ok=True)
+        os.makedirs(self.settlement_inbox_dir, exist_ok=True)
+        os.makedirs(self.settlement_archive_dir, exist_ok=True)
         payload = self._csv_bytes([
             {"status": "SUCCESS", "amount": "12.50", "currency": "TRY", "merchantReference": "REF-INBOX-DUP", "settlementReferenceCode": "SET-INBOX-DUP"}
         ])
-        inbox_path = "/tmp/hy_settlement_inbox/duplicate.csv"
+        inbox_path = os.path.join(self.settlement_inbox_dir, "duplicate.csv")
         with open(inbox_path, "wb") as handle:
             handle.write(payload)
         call_command("import_pending_settlement_files", "--limit", "10")

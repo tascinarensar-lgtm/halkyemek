@@ -1,0 +1,291 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-halkyemek}
+      POSTGRES_USER: ${POSTGRES_USER:-halkyemek}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  release:
+    build:
+      context: .
+    entrypoint: []
+    command: /app/scripts/release.sh true
+    env_file:
+      - path: ${DEPLOY_ENV_FILE:-.env.prod}
+        required: false
+    environment:
+      APP_ENV: production
+      DJANGO_SETTINGS_MODULE: halkyemekproject.settings.prod
+      RUN_DB_MIGRATIONS: "1"
+      RUN_COLLECTSTATIC: "1"
+      RUN_FINAL_PREFLIGHT: "1"
+      RUN_VALIDATE_ENV_EXAMPLES: "1"
+      FINAL_PREFLIGHT_FAIL_ON_LOCK_SKIP: "1"
+      RUN_BOOTSTRAP_MARKETPLACE: "0"
+      RUN_VERIFY_BOOTSTRAP_MARKETPLACE: "0"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - staticfiles_data:/app/staticfiles
+      - media_data:/app/media
+    restart: "no"
+
+  web:
+    build:
+      context: .
+    env_file:
+      - path: ${DEPLOY_ENV_FILE:-.env.prod}
+        required: false
+    environment:
+      APP_ENV: production
+      DJANGO_SETTINGS_MODULE: halkyemekproject.settings.prod
+      RUN_DB_MIGRATIONS: "0"
+      RUN_COLLECTSTATIC: "0"
+      RUN_FINAL_PREFLIGHT: "0"
+      RUN_VALIDATE_ENV_EXAMPLES: "0"
+      FINAL_PREFLIGHT_FAIL_ON_LOCK_SKIP: "0"
+      RUN_BOOTSTRAP_MARKETPLACE: "0"
+      RUN_VERIFY_BOOTSTRAP_MARKETPLACE: "0"
+    expose:
+      - "8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      release:
+        condition: service_completed_successfully
+    volumes:
+      - staticfiles_data:/app/staticfiles:ro
+      - media_data:/app/media
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health/readiness/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  worker-notifications:
+    build:
+      context: .
+    entrypoint: []
+    command: /app/scripts/run_celery_worker.sh
+    env_file:
+      - path: ${DEPLOY_ENV_FILE:-.env.prod}
+        required: false
+    environment:
+      APP_ENV: production
+      DJANGO_SETTINGS_MODULE: halkyemekproject.settings.prod
+      CELERY_WORKER_NAME: worker-notifications
+      CELERY_WORKER_QUEUES: notifications,default
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      release:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  worker-ops:
+    build:
+      context: .
+    entrypoint: []
+    command: /app/scripts/run_celery_worker.sh
+    env_file:
+      - path: ${DEPLOY_ENV_FILE:-.env.prod}
+        required: false
+    environment:
+      APP_ENV: production
+      DJANGO_SETTINGS_MODULE: halkyemekproject.settings.prod
+      CELERY_WORKER_NAME: worker-ops
+      CELERY_WORKER_QUEUES: ops,default
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      release:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  worker-finance:
+    build:
+      context: .
+    entrypoint: []
+    command: /app/scripts/run_celery_worker.sh
+    env_file:
+      - path: ${DEPLOY_ENV_FILE:-.env.prod}
+        required: false
+    environment:
+      APP_ENV: production
+      DJANGO_SETTINGS_MODULE: halkyemekproject.settings.prod
+      CELERY_WORKER_NAME: worker-finance
+      CELERY_WORKER_QUEUES: finance,default
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      release:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  worker-ops-heavy:
+    build:
+      context: .
+    entrypoint: []
+    command: /app/scripts/run_celery_worker.sh
+    env_file:
+      - path: ${DEPLOY_ENV_FILE:-.env.prod}
+        required: false
+    environment:
+      APP_ENV: production
+      DJANGO_SETTINGS_MODULE: halkyemekproject.settings.prod
+      CELERY_WORKER_NAME: worker-ops-heavy
+      CELERY_WORKER_QUEUES: ops_heavy,default
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      release:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  beat:
+    build:
+      context: .
+    entrypoint: []
+    command: /app/scripts/run_celery_beat.sh
+    env_file:
+      - path: ${DEPLOY_ENV_FILE:-.env.prod}
+        required: false
+    environment:
+      APP_ENV: production
+      DJANGO_SETTINGS_MODULE: halkyemekproject.settings.prod
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      release:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_APP_NAME: ${NEXT_PUBLIC_APP_NAME:-HalkYemek}
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-https://api.halkyemek.com.tr}
+        NEXT_PUBLIC_DEFAULT_DISTRICT: ${NEXT_PUBLIC_DEFAULT_DISTRICT:-BEYLIKDUZU}
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-https://halkyemek.com.tr}
+        NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID:-}
+        NEXT_PUBLIC_FIREBASE_API_KEY: ${NEXT_PUBLIC_FIREBASE_API_KEY:-}
+        NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN:-}
+        NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${NEXT_PUBLIC_FIREBASE_PROJECT_ID:-}
+        NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID:-}
+        NEXT_PUBLIC_FIREBASE_APP_ID: ${NEXT_PUBLIC_FIREBASE_APP_ID:-}
+        NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID: ${NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID:-}
+        NEXT_PUBLIC_FCM_WEB_VAPID_KEY: ${NEXT_PUBLIC_FCM_WEB_VAPID_KEY:-}
+        SESSION_COOKIE_PREFIX: ${SESSION_COOKIE_PREFIX:-hy}
+        SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-true}
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_APP_NAME: ${NEXT_PUBLIC_APP_NAME:-HalkYemek}
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-https://api.halkyemek.com.tr}
+      NEXT_PUBLIC_DEFAULT_DISTRICT: ${NEXT_PUBLIC_DEFAULT_DISTRICT:-BEYLIKDUZU}
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-https://halkyemek.com.tr}
+      NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID:-}
+      NEXT_PUBLIC_FIREBASE_API_KEY: ${NEXT_PUBLIC_FIREBASE_API_KEY:-}
+      NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN:-}
+      NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${NEXT_PUBLIC_FIREBASE_PROJECT_ID:-}
+      NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID:-}
+      NEXT_PUBLIC_FIREBASE_APP_ID: ${NEXT_PUBLIC_FIREBASE_APP_ID:-}
+      NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID: ${NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID:-}
+      NEXT_PUBLIC_FCM_WEB_VAPID_KEY: ${NEXT_PUBLIC_FCM_WEB_VAPID_KEY:-}
+      SESSION_COOKIE_PREFIX: ${SESSION_COOKIE_PREFIX:-hy}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-true}
+      HOSTNAME: 0.0.0.0
+      PORT: 3000
+    expose:
+      - "3000"
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:1.27-alpine
+    depends_on:
+      web:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+    ports:
+      - "80:80"
+    volumes:
+      - ./deploy/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - staticfiles_data:/srv/static:ro
+      - media_data:/srv/media:ro
+    restart: unless-stopped
+
+  backup:
+    image: postgres:16
+    profiles:
+      - backup
+    env_file:
+      - path: ${DEPLOY_ENV_FILE:-.env.prod}
+        required: false
+    environment:
+      APP_ENV: production
+      DATABASE_URL: ${BACKUP_DATABASE_URL:-}
+      POSTGRES_DB: ${POSTGRES_DB:-halkyemek}
+      POSTGRES_USER: ${POSTGRES_USER:-halkyemek}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      POSTGRES_HOST: ${POSTGRES_HOST:-db}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      BACKUP_DIR: ${BACKUP_DIR:-/backups}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+      BACKUP_MIN_BYTES: ${BACKUP_MIN_BYTES:-128}
+    depends_on:
+      db:
+        condition: service_healthy
+    entrypoint:
+      - /bin/bash
+      - /scripts/backup_postgres.sh
+    volumes:
+      - ./scripts:/scripts:ro
+      - ${BACKUP_HOST_DIR:-./backups/postgres}:/backups
+    restart: "no"
+
+volumes:
+  pgdata:
+  staticfiles_data:
+  media_data:
+
+

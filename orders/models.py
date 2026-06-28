@@ -139,7 +139,7 @@ class Order(models.Model):
                 errors["checkout_session"] = "Checkout session business mismatch."
             if session.user_id != self.user_id:
                 errors["checkout_session"] = "Checkout session user mismatch."
-            if not session.cart_id:
+            if session.source_type == CheckoutSession.SourceType.CART and not session.cart_id:
                 errors["checkout_session"] = "Order requires a cart-backed checkout session."
             if int(session.amount) != int(self.amount):
                 errors["amount"] = "Order amount must match checkout session amount."
@@ -267,6 +267,10 @@ class CheckoutSession(models.Model):
         EXPIRED = "EXPIRED", "Expired"
         CANCELLED = "CANCELLED", "Cancelled"
 
+    class SourceType(models.TextChoices):
+        CART = "CART", "Cart"
+        SURPRISE_DEAL = "SURPRISE_DEAL", "Surprise deal"
+
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -284,6 +288,7 @@ class CheckoutSession(models.Model):
         on_delete=models.SET_NULL,
         related_name="checkout_sessions",
     )
+    source_type = models.CharField(max_length=24, choices=SourceType.choices, default=SourceType.CART)
     token = models.CharField(max_length=64, unique=True, db_index=True)
     cashier_code = models.CharField(max_length=6, unique=True, db_index=True, null=True, blank=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
@@ -337,7 +342,10 @@ class CheckoutSession(models.Model):
 
     def clean(self):
         errors: dict[str, str] = {}
-        if not self.cart_id:
+        if not self.source_type:
+            self.source_type = self.SourceType.CART
+
+        if self.source_type == self.SourceType.CART and not self.cart_id:
             errors["cart"] = "Checkout session must reference a cart."
 
         if self.cart_id:
@@ -345,6 +353,8 @@ class CheckoutSession(models.Model):
                 errors["cart"] = "Cart user mismatch."
             if self.cart.business_id != self.business_id:
                 errors["cart"] = "Cart business mismatch."
+        elif self.source_type != self.SourceType.SURPRISE_DEAL:
+            errors["cart"] = "Cart is required for this checkout source."
 
         if self.amount <= 0:
             errors["amount"] = "Checkout amount must be positive."
@@ -402,6 +412,63 @@ class CheckoutSession(models.Model):
 
     def __str__(self):
         return f"{self.pk} {self.status} {self.amount}"
+
+
+class CheckoutQuotaReservation(models.Model):
+    class Status(models.TextChoices):
+        RESERVED = "RESERVED", "Reserved"
+        RELEASED = "RELEASED", "Released"
+        COMMITTED = "COMMITTED", "Committed"
+
+    checkout_session = models.ForeignKey(
+        "orders.CheckoutSession",
+        on_delete=models.CASCADE,
+        related_name="quota_reservations",
+    )
+    menu_item = models.ForeignKey(
+        "menus.MenuItem",
+        on_delete=models.PROTECT,
+        related_name="checkout_quota_reservations",
+    )
+    quantity = models.PositiveIntegerField()
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.RESERVED)
+    created_at = models.DateTimeField(auto_now_add=True)
+    released_at = models.DateTimeField(null=True, blank=True)
+    committed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["checkout_session", "status"], name="idx_quota_res_session_status"),
+            models.Index(fields=["menu_item", "status"], name="idx_quota_res_menu_status"),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["checkout_session", "menu_item"],
+                name="uq_quota_res_session_menu_item",
+            ),
+            models.CheckConstraint(
+                check=models.Q(quantity__gt=0),
+                name="ck_quota_res_quantity_positive",
+            ),
+        ]
+
+    def clean(self):
+        errors: dict[str, str] = {}
+        if self.checkout_session_id and self.menu_item_id and self.checkout_session.business_id != self.menu_item.business_id:
+            errors["menu_item"] = "Menu item business must match checkout session business."
+        if self.status == self.Status.RELEASED and not self.released_at:
+            errors["released_at"] = "released_at is required when reservation is released."
+        if self.status == self.Status.COMMITTED and not self.committed_at:
+            errors["committed_at"] = "committed_at is required when reservation is committed."
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.checkout_session_id}:{self.menu_item_id}:{self.quantity}:{self.status}"
 
 
 class Cart(models.Model):
@@ -548,13 +615,15 @@ class CartItem(models.Model):
                     "category_id": self.menu_item.category_id,
                     "name": self.menu_item.name,
                     "price_amount": int(self.menu_item.price_amount),
+                    "image_url": self.menu_item.image_url or "",
                 }
 
         self.line_total_amount = int(self.unit_price_amount or 0) * int(self.quantity or 0)
         self.full_clean()
         with transaction.atomic():
-            super().save(*args, **kwargs)
+            result = super().save(*args, **kwargs)
             self.cart.refresh_totals()
+        return result
 
     def delete(self, *args, **kwargs):
         cart = self.cart
@@ -621,8 +690,8 @@ class OrderItem(models.Model):
                     "category_id": self.menu_item.category_id,
                     "name": self.menu_item.name,
                     "price_amount": int(self.menu_item.price_amount),
+                    "image_url": self.menu_item.image_url or "",
                 }
 
-        self.line_total_amount = int(self.unit_price_amount or 0) * int(self.quantity or 0)
         self.full_clean()
         return super().save(*args, **kwargs)

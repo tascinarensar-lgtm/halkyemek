@@ -1,7 +1,9 @@
 from django.test import TestCase
+from django.test import override_settings
+from django.core import mail
 
 from accounts.models import User
-from notifications.models import Device, Notification, DeliveryAttempt
+from notifications.models import Device, EmailDeliveryAttempt, Notification, DeliveryAttempt
 from notifications.services import NotificationService
 
 """
@@ -89,3 +91,55 @@ class NotificationEnqueueTests(TestCase):
         self.assertNotEqual(first.id, second.id)
         self.assertEqual(Notification.objects.count(), 2)
         self.assertEqual(DeliveryAttempt.objects.count(), 2)
+
+    @override_settings(EMAIL_NOTIFICATIONS_ENABLED=True, EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+    def test_enqueue_creates_email_attempt_for_verified_google_email(self):
+        user = User.objects.create_user(
+            username="u4",
+            password="pass",
+            role=User.Role.CUSTOMER,
+            google_email="customer@example.com",
+            google_email_verified=True,
+        )
+
+        notif = NotificationService.enqueue(
+            user=user,
+            type=Notification.Type.SYSTEM_BROADCAST,
+            title="Duyuru",
+            body="Yeni bildirim",
+            payload={"url": "/bildirimler"},
+            dedupe_key="email-key",
+        )
+
+        attempt = EmailDeliveryAttempt.objects.get(notification=notif)
+        self.assertEqual(attempt.email_to, "customer@example.com")
+
+        NotificationService.send_email_attempt(attempt.id)
+        attempt.refresh_from_db()
+        notif.refresh_from_db()
+
+        self.assertEqual(attempt.status, EmailDeliveryAttempt.Status.SENT)
+        self.assertEqual(notif.status, Notification.Status.SENT)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ["customer@example.com"])
+
+    @override_settings(EMAIL_NOTIFICATIONS_ENABLED=True)
+    def test_enqueue_skips_email_attempt_for_unverified_google_email(self):
+        user = User.objects.create_user(
+            username="u5",
+            password="pass",
+            role=User.Role.CUSTOMER,
+            google_email="unverified@example.com",
+            google_email_verified=False,
+        )
+
+        NotificationService.enqueue(
+            user=user,
+            type=Notification.Type.SYSTEM_BROADCAST,
+            title="Duyuru",
+            body="Yeni bildirim",
+            payload={},
+            dedupe_key="email-unverified",
+        )
+
+        self.assertEqual(EmailDeliveryAttempt.objects.count(), 0)

@@ -1,12 +1,12 @@
-import { cn } from "@/lib/utils/cn";
+import { Badge, type BadgeTone } from "@/components/ui/Badge";
 
 export function StatusChip({ label, tone = "default" }: { label: string; tone?: "default" | "success" | "warning" | "danger" }) {
-  const styles = {
-    default: "bg-zinc-100 text-zinc-700",
-    success: "bg-emerald-100 text-emerald-700",
-    warning: "bg-amber-100 text-amber-700",
-    danger: "bg-red-100 text-red-700",
-  } as const;
+  const toneMap: Record<"default" | "success" | "warning" | "danger", BadgeTone> = {
+    default: "neutral",
+    success: "success",
+    warning: "warning",
+    danger: "error",
+  };
 
-  return <span className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-medium", styles[tone])}>{label}</span>;
+  return <Badge tone={toneMap[tone]}>{label}</Badge>;
 }

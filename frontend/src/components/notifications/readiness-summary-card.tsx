@@ -25,7 +25,7 @@ export function NotificationReadinessSummaryCard({ readiness }: { readiness: Not
 
   return (
     <Card className="border-stone-200 shadow-sm">
-      <CardContent className="space-y-5 p-5">
+      <CardContent className="space-y-4 p-5">
         <div className="flex items-start gap-3">
           <div
             className={`inline-flex h-11 w-11 items-center justify-center rounded-2xl ${
@@ -34,20 +34,20 @@ export function NotificationReadinessSummaryCard({ readiness }: { readiness: Not
           >
             {ready ? <ShieldCheck className="h-5 w-5" /> : <BellOff className="h-5 w-5" />}
           </div>
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-base font-semibold text-zinc-950">Bildirim durumu</h2>
               <StatusChip label={browserPresentation.label} tone={browserPresentation.tone} />
             </div>
             <p className="text-sm leading-6 text-zinc-600">
-              Siparis, cuzdan ve odeme adimlarinda canli bildirim acik oldugunda surec daha guvenli ve daha akici ilerler.
+              Bildirim hazırlığı açık olduğunda checkout ve QR akışı daha güvenli ilerler.
             </p>
           </div>
         </div>
 
         <div className={`rounded-2xl p-4 text-sm leading-6 ${ready ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900"}`}>
           <div className="font-medium">
-            {ready ? "Bu cihaz bildirim almak icin hazir gorunuyor." : "Bildirim akisinda tamamlanmasi gereken bir adim var."}
+            {ready ? "Bu cihaz bildirim almak için hazır görünüyor." : "Bildirim akışında tamamlanması gereken bir adım var."}
           </div>
           <p className="mt-2">{readiness?.message || browserPresentation.description}</p>
         </div>
@@ -61,7 +61,7 @@ export function NotificationReadinessSummaryCard({ readiness }: { readiness: Not
 
         <div className="grid gap-3 sm:grid-cols-4">
           <div className="rounded-2xl bg-zinc-50 p-4 text-sm text-zinc-700">
-            <div className="text-xs font-medium uppercase tracking-[0.14em] text-zinc-500">Tarayici izni</div>
+            <div className="text-xs font-medium uppercase tracking-[0.14em] text-zinc-500">Tarayıcı izni</div>
             <div className="mt-2 text-base font-semibold text-zinc-950">{browserPresentation.label}</div>
           </div>
           <div className="rounded-2xl bg-zinc-50 p-4 text-sm text-zinc-700">
@@ -69,17 +69,13 @@ export function NotificationReadinessSummaryCard({ readiness }: { readiness: Not
             <div className="mt-2 text-base font-semibold text-zinc-950">{activeDeviceCount}</div>
           </div>
           <div className="rounded-2xl bg-zinc-50 p-4 text-sm text-zinc-700">
-            <div className="text-xs font-medium uppercase tracking-[0.14em] text-zinc-500">Izinli cihaz</div>
+            <div className="text-xs font-medium uppercase tracking-[0.14em] text-zinc-500">İzinli cihaz</div>
             <div className="mt-2 text-base font-semibold text-zinc-950">{permittedDeviceCount}</div>
           </div>
           <div className="rounded-2xl bg-zinc-50 p-4 text-sm text-zinc-700">
-            <div className="text-xs font-medium uppercase tracking-[0.14em] text-zinc-500">Izni kapali cihaz</div>
+            <div className="text-xs font-medium uppercase tracking-[0.14em] text-zinc-500">İzni kapalı cihaz</div>
             <div className="mt-2 text-base font-semibold text-zinc-950">{deniedDeviceCount}</div>
           </div>
-        </div>
-
-        <div className="rounded-2xl bg-zinc-50 p-4 text-sm leading-6 text-zinc-600">
-          Tarayici izni acik, cihaz kaydi guncel ve ops yayinlari aktif oldugunda kampanya, duyuru ve islem bildirimleri bu cihaza ulasabilir.
         </div>
       </CardContent>
     </Card>

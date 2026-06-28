@@ -6,7 +6,6 @@ const menuDescriptionBySlug: Record<string, string> = {
   "kuru-fasulye-menu": "Doyurucu ana yemek arayanlar için öne çıkan klasik menülerden biri.",
   "tavuklu-pilav": "Pratik ve doyurucu öğün arayanlar için öne çıkan uygun fiyatlı seçeneklerden biri.",
   ayran: "Menünün yanına eşlik eden ferahlatıcı içecek seçeneklerinden biri.",
-  "nohutlu-pilav": "Doyurucu ve ekonomik öğün arayanlar için öne çıkan pilav seçeneklerinden biri.",
 };
 
 export function getMenuItemDisplayName(item: Pick<MenuItemSummary, "name">) {
@@ -14,6 +13,10 @@ export function getMenuItemDisplayName(item: Pick<MenuItemSummary, "name">) {
 }
 
 export function getMenuItemDisplayDescription(item: Pick<MenuItemSummary, "slug" | "name" | "description">) {
+  if (item.slug === "nohutlu-pilav") {
+    return "";
+  }
+
   const mappedDescription = menuDescriptionBySlug[item.slug];
   if (mappedDescription) {
     return mappedDescription;

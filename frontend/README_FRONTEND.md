@@ -45,25 +45,23 @@ npm run dev
 ### Public
 
 - `/`
-- `/giris`
 - `/auth/callback`
 - `/kategoriler`
 - `/kategoriler/[slug]`
 - `/isletmeler`
 - `/isletmeler/[businessId]`
-- `/isletmeler/[businessId]/menu`
 
 ### Customer
 
-- `/sepet`
 - `/checkout`
 - `/checkout/[token]`
 - `/siparislerim`
 - `/siparislerim/[orderId]`
 - `/cuzdan`
-- `/cuzdan/yukle`
 - `/cuzdan/hareketler`
 - `/cuzdan/bekleyen-islemler`
+- `/cuzdan/yukle/sonuc`
+- `/qrlarim`
 - `/bildirimler`
 - `/hesabim`
 
@@ -75,16 +73,15 @@ npm run dev
 - `/isletme/[businessId]/gecmis`
 - `/isletme/[businessId]/siparisler/[orderId]`
 - `/isletme/[businessId]/profil`
-- `/isletme/[businessId]/yonetim/kategoriler`
-- `/isletme/[businessId]/yonetim/menu`
-- `/isletme/[businessId]/yonetim/teklifler`
-- `/isletme/[businessId]/yonetim/medya`
+- `/isletme/[businessId]?panel=menu`
 
 ### Ops
 
 - `/ops`
 - `/ops/isletmeler`
+- `/ops/isletmeler/yeni`
 - `/ops/isletmeler/[businessId]`
+- `/ops/isletmeler/[businessId]/icerik`
 - `/ops/isletmeler/[businessId]/uyelikler`
 - `/ops/isletmeler/[businessId]/durum`
 - `/ops/isletmeler/[businessId]/iyzico`
@@ -95,14 +92,24 @@ npm run dev
 - `/ops/reconcile/isletme/[businessId]`
 - `/ops/settlement`
 - `/ops/settlement/importlar`
+- `/ops/settlement/importlar/[importId]`
 - `/ops/settlement/kayitlar`
+- `/ops/settlement/kayitlar/[recordId]`
 - `/ops/bildirimler/yayinla`
+
+### Redirect / drawer girişleri
+
+- `/giris` -> `/?auth=login`
+- `/sepet` -> `/?cart=open`
+- `/cuzdan/yukle` -> `/cuzdan?topup=1`
+- `/isletmeler/[businessId]/menu` -> `/isletmeler/[businessId]`
+- `/isletme/[businessId]/yonetim/[section]` -> `/isletme/[businessId]?panel=[section]`
 
 ## Smoke test rotaları
 
-1. Public discovery: `/` -> `/kategoriler` -> `/isletmeler` -> `/isletmeler/[businessId]` -> `/isletmeler/[businessId]/menu`
-2. Customer: `/giris` -> `/sepet` -> `/checkout` -> `/checkout/[token]` -> `/siparislerim` -> `/cuzdan` -> `/bildirimler` -> `/hesabim`
-3. Business: `/isletme` -> `/isletme/[businessId]` -> `/isletme/[businessId]/tuket/[token]` -> `/isletme/[businessId]/gecmis` -> `/isletme/[businessId]/profil` -> `/isletme/[businessId]/yonetim/*`
+1. Public discovery: `/` -> `/kategoriler` -> `/isletmeler` -> `/isletmeler/[businessId]`
+2. Customer: `/?auth=login` -> `/?cart=open` -> `/checkout` -> `/checkout/[token]` -> `/siparislerim` -> `/qrlarim` -> `/cuzdan` -> `/bildirimler` -> `/hesabim`
+3. Business: `/isletme` -> `/isletme/[businessId]` -> `/isletme/[businessId]?panel=menu` -> `/isletme/[businessId]/tuket/[token]` -> `/isletme/[businessId]/gecmis` -> `/isletme/[businessId]/profil`
 4. Ops: `/ops` -> `/ops/isletmeler` -> `/ops/payoutlar` -> `/ops/settlement` -> `/ops/bildirimler/yayinla`
 
 ## Kritik akışlar

@@ -29,4 +29,5 @@ class RoleChangeRedTeamTests(TestCase):
             format="json",
         )
         self.assertEqual(resp.status_code, 400)
-        self.assertEqual(resp.data["detail"], "role field is not allowed.")  # type: ignore
+        self.assertEqual(resp.data["error"]["code"], "role_not_allowed")  # type: ignore
+        self.assertEqual(resp.data["error"]["message"], "role field is not allowed.")  # type: ignore

@@ -1,8 +1,9 @@
-import { authenticatedApiFetch } from "@/lib/api/authenticated-client";
+﻿import { authenticatedApiFetch } from "@/lib/api/authenticated-client";
 import { toQueryString } from "@/features/discovery/params";
 import {
   buildNotificationDeviceInput,
   getBrowserNotificationState,
+  showBrowserTestNotification,
   startForegroundMessageListener,
   syncStoredFcmPermissionState,
 } from "@/lib/fcm";
@@ -61,4 +62,4 @@ export function getBrowserPushState(): Promise<BrowserNotificationState> {
   return getBrowserNotificationState();
 }
 
-export { startForegroundMessageListener };
+export { showBrowserTestNotification, startForegroundMessageListener };

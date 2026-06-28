@@ -1,38 +1,30 @@
 import { repairPotentialMojibake } from "@/lib/utils/text";
 
 const categoryContentBySlug: Record<string, { name: string; description: string }> = {
-  "tavuk-doner": {
-    name: "Tavuk Döner",
-    description: "Uygun fiyatlı tavuk döner ve pratik menü seçenekleri.",
-  },
-  "et-doner": {
-    name: "Et Döner",
-    description: "Et döner sevenler için doyurucu ve avantajlı menüler.",
-  },
   burger: {
     name: "Burger",
-    description: "Klasik ve özel burger menülerini bir araya getiren kategori.",
+    description: "Burger menülerini tek katalogda keşfet.",
   },
   pizza: {
     name: "Pizza",
-    description: "Farklı boy ve içeriklerde pizza seçenekleri.",
+    description: "Pizza menülerini tek katalogda keşfet.",
   },
-  "pilav-tencere-yemekleri": {
-    name: "Pilav & Tencere Yemekleri",
-    description: "Pilav, tencere yemekleri ve doyurucu tabaklar.",
-  },
-  "ev-yemekleri": {
-    name: "Ev Yemekleri",
-    description: "Esnaf usulü günlük menüler ve ev yemeği seçenekleri.",
+  doner: {
+    name: "Döner",
+    description: "Döner menülerini tek katalogda keşfet.",
   },
   kebap: {
     name: "Kebap",
-    description: "Kebap ve ızgara çeşitlerini bir araya getiren kategori.",
+    description: "Kebap menülerini tek katalogda keşfet.",
   },
-  diger: {
-    name: "Diğer",
-    description: "Diğer tüm özel veya ayrı sınıflanan işletmeler.",
-  },
+};
+
+const halkTasarrufLegacySlugMap: Record<string, string> = {
+  "firin-pastane": "burger",
+  "kafe-kahve-zincirleri": "burger",
+  marketler: "burger",
+  "fast-food-restoranlari": "burger",
+  "doner-kebap-isletmeleri": "doner",
 };
 
 function prettifyFallbackSlug(slug: string) {
@@ -41,22 +33,21 @@ function prettifyFallbackSlug(slug: string) {
     .filter(Boolean)
     .map((part) => {
       const normalized = part.toLowerCase();
-
       if (normalized === "doner") return "Döner";
-      if (normalized === "diger") return "Diğer";
-
       return normalized.charAt(0).toUpperCase() + normalized.slice(1);
     })
     .join(" ");
 }
 
 export function getCategoryDisplayName(slug: string, fallbackName?: string | null) {
-  return categoryContentBySlug[slug]?.name || repairPotentialMojibake(fallbackName) || prettifyFallbackSlug(slug) || "Kategori";
+  const resolvedSlug = halkTasarrufLegacySlugMap[slug] ?? slug;
+  return categoryContentBySlug[resolvedSlug]?.name || repairPotentialMojibake(fallbackName) || prettifyFallbackSlug(slug) || "Kategori";
 }
 
 export function getCategoryDisplayDescription(slug: string, fallbackDescription?: string | null) {
+  const resolvedSlug = halkTasarrufLegacySlugMap[slug] ?? slug;
   return (
-    categoryContentBySlug[slug]?.description ||
+    categoryContentBySlug[resolvedSlug]?.description ||
     repairPotentialMojibake(fallbackDescription) ||
     "Bu kategorideki anlaşmalı işletmeleri görüntüleyin."
   );

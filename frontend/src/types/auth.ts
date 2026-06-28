@@ -4,6 +4,10 @@ export interface BusinessMembershipSummary {
   id: number;
   name: string;
   member_role: string;
+  access_halkyemek: boolean;
+  access_halktasarruf: boolean;
+  supports_halkyemek: boolean;
+  supports_halktasarruf: boolean;
 }
 
 export interface AuthUser {
@@ -36,4 +40,5 @@ export interface SessionState {
   businesses: BusinessMembershipSummary[];
   hasBusinessMembership: boolean;
   activeBusinessId: number | null;
+  activeHalkTasarrufBusinessId: number | null;
 }

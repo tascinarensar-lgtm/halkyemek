@@ -49,7 +49,7 @@ export function parseJsonObjectInput(value: string): Record<string, unknown> {
   if (!trimmed) return {};
   const parsed: unknown = JSON.parse(trimmed);
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error("Payload JSON nesne formatında olmalı.");
+    throw new Error("Gelişmiş teknik ek veri JSON nesnesi formatında olmalı.");
   }
   return parsed as Record<string, unknown>;
 }

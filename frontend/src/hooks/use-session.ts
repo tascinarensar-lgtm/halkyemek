@@ -26,9 +26,9 @@ export function useSession() {
     queryKey: SESSION_QUERY_KEY,
     queryFn: fetchSession,
     initialData: initialSessionRef.current ?? undefined,
-    staleTime: 0,
-    refetchOnMount: true,
+    staleTime: 30_000,
+    refetchOnMount: false,
     refetchOnReconnect: true,
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: false,
   });
 }

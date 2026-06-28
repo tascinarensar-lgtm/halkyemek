@@ -47,7 +47,7 @@ export function isFirebaseMessagingConfigured() {
 export function getFirebaseClientApp(): FirebaseApp {
   const config = getFirebaseMessagingClientConfig();
   if (!config) {
-    throw new Error("Firebase web yapılandırması eksik.");
+    throw new Error("Firebase web yapÄ±landÄ±rmasÄ± eksik.");
   }
 
   return getApps().length ? getApp() : initializeApp(config.firebaseOptions);

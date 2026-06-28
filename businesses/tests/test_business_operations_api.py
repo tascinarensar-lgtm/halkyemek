@@ -7,7 +7,7 @@ from rest_framework.test import APIClient
 from businesses.models import BusinessMember
 from menus.models import BusinessOffer
 from orders.services_cart import CartService
-from orders.models import Order
+from orders.models import CheckoutSession, Order
 from test_support import (
     add_membership,
     create_business,
@@ -72,6 +72,70 @@ class BusinessOperationsApiTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["data"]["business"]["member_role"], BusinessMember.Role.CASHIER)
         self.assertNotIn("outstanding_net_amount", response.data["data"]["finance"]["earning"])
+
+    def test_dashboard_pending_qr_excludes_expired_and_cancelled_sessions(self):
+        CartService.add_item(user=self.customer, menu_item=self.menu_item, quantity=1)
+        self.client.force_authenticate(self.customer)
+        active_resp = self.client.post(
+            "/api/v1/checkout-sessions/",
+            {},
+            format="json",
+            HTTP_IDEMPOTENCY_KEY="ops-biz-active-checkout-create",
+        )
+        self.assertEqual(active_resp.status_code, 201)
+        active_session = CheckoutSession.objects.get(token=active_resp.data["token"])
+
+        expired_session = CheckoutSession.objects.create(
+            user=self.customer,
+            business=self.business,
+            cart=active_session.cart,
+            token=CheckoutSession.generate_token(),
+            cashier_code=CheckoutSession.generate_cashier_code(),
+            status=CheckoutSession.Status.PENDING,
+            amount=active_session.amount,
+            subtotal_amount=active_session.subtotal_amount,
+            customer_fee_amount=active_session.customer_fee_amount,
+            business_fee_amount=active_session.business_fee_amount,
+            business_net_amount=active_session.business_net_amount,
+            platform_total_fee_amount=active_session.platform_total_fee_amount,
+            item_count=active_session.item_count,
+            currency=active_session.currency,
+            business_name=active_session.business_name,
+            pricing_snapshot=active_session.pricing_snapshot,
+            cart_snapshot=active_session.cart_snapshot,
+            expires_at=timezone.now() - timedelta(minutes=1),
+        )
+        cancelled_session = CheckoutSession.objects.create(
+            user=self.customer,
+            business=self.business,
+            cart=active_session.cart,
+            token=CheckoutSession.generate_token(),
+            cashier_code=CheckoutSession.generate_cashier_code(),
+            status=CheckoutSession.Status.CANCELLED,
+            amount=active_session.amount,
+            subtotal_amount=active_session.subtotal_amount,
+            customer_fee_amount=active_session.customer_fee_amount,
+            business_fee_amount=active_session.business_fee_amount,
+            business_net_amount=active_session.business_net_amount,
+            platform_total_fee_amount=active_session.platform_total_fee_amount,
+            item_count=active_session.item_count,
+            currency=active_session.currency,
+            business_name=active_session.business_name,
+            pricing_snapshot=active_session.pricing_snapshot,
+            cart_snapshot=active_session.cart_snapshot,
+            expires_at=timezone.now() + timedelta(minutes=10),
+            cancelled_at=timezone.now(),
+        )
+
+        self.client.force_authenticate(self.cashier)
+        response = self.client.get(f"/api/v1/businesses/{self.business.id}/operations/dashboard-summary/")
+
+        self.assertEqual(response.status_code, 200)
+        tokens = {item["token"] for item in response.data["data"]["sessions"]["pending"]}
+        self.assertIn(active_session.token, tokens)
+        self.assertNotIn(expired_session.token, tokens)
+        self.assertNotIn(cancelled_session.token, tokens)
+        self.assertTrue(response.data["data"]["sessions"]["pending"][0]["cashier_code"])
 
     def test_dashboard_rejects_non_member(self):
         self.client.force_authenticate(self.outsider)

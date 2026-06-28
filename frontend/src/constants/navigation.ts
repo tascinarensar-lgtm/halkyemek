@@ -1,4 +1,4 @@
-export const customerNavigation = [
+﻿export const customerNavigation = [
   { href: "/", label: "Ana Sayfa" },
   { href: "/kategoriler", label: "Kategoriler" },
   { href: "/isletmeler", label: "İşletmeler" },
@@ -6,7 +6,6 @@ export const customerNavigation = [
   { href: "/cuzdan", label: "Cüzdan" },
   { href: "/siparislerim", label: "Siparişlerim" },
   { href: "/bildirimler", label: "Bildirimler" },
-  { href: "/hesabim", label: "Hesabım" },
 ];
 
 export const businessNavigation = [
@@ -14,7 +13,6 @@ export const businessNavigation = [
 ];
 
 export const opsNavigation = [
-  { href: "/ops", label: "Ops" },
   { href: "/ops/isletmeler", label: "İşletmeler" },
   { href: "/ops/payoutlar", label: "Payoutlar" },
   { href: "/ops/settlement", label: "Settlement" },

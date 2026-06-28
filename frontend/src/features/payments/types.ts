@@ -14,6 +14,10 @@ export interface PaymentIntent {
   is_settled: boolean;
   settled_at: string | null;
   marketplace_conversation_id: string;
+  payment_reference?: string;
+  manual_payment_account_name?: string;
+  manual_payment_iban?: string;
+  manual_payment_instructions?: string[];
   created_at: string;
   updated_at: string;
 }
@@ -34,6 +38,11 @@ export interface TopupIntentViewModel {
   processingError: string | null;
   isSettled: boolean;
   settledAt: string | null;
+  paymentReference: string;
+  manualPaymentAccountName: string | null;
+  manualPaymentIban: string | null;
+  manualPaymentInstructions: string[];
+  isManualTopup: boolean;
   createdAt: string;
   updatedAt: string;
   statusLabel: string;

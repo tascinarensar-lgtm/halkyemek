@@ -6,13 +6,22 @@ import { setSessionCookie } from "@/lib/auth/cookies";
 
 const bodySchema = z.object({
   businessId: z.number().int().positive(),
+  workspace: z.enum(["halkyemek", "halktasarruf"]).default("halkyemek"),
 });
 
 export async function PATCH(request: Request) {
   try {
     const body = bodySchema.parse(await request.json());
     const session = await getSessionState();
-    const matchedBusiness = session.businesses.find((item) => item.id === body.businessId);
+    const matchedBusiness = session.businesses.find(
+      (item) =>
+        item.id === body.businessId &&
+        (
+          body.workspace === "halkyemek"
+            ? item.supports_halkyemek && item.access_halkyemek
+            : item.supports_halktasarruf && item.access_halktasarruf
+        ),
+    );
 
     if (!session.isAuthenticated || !matchedBusiness) {
       return NextResponse.json(
@@ -21,7 +30,10 @@ export async function PATCH(request: Request) {
       );
     }
 
-    const nextSession = { ...session, activeBusinessId: body.businessId };
+    const nextSession =
+      body.workspace === "halkyemek"
+        ? { ...session, activeBusinessId: body.businessId }
+        : { ...session, activeHalkTasarrufBusinessId: body.businessId };
     await setSessionCookie(nextSession);
 
     return NextResponse.json(nextSession);

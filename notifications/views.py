@@ -13,19 +13,22 @@ from businesses.models import BusinessMember
 from notifications.models import Device, Notification
 from notifications.serializers import (
     AdminBroadcastSerializer,
+    AdminEmailBroadcastSerializer,
     BroadcastQueuedSerializer,
     DeviceUpsertResponseSerializer,
     DeviceUpsertSerializer,
+    EmailBroadcastQueuedSerializer,
     NotificationReadinessSerializer,
     NotificationSerializer,
 )
-from notifications.services import NotificationService
+from notifications.services import BroadcastQueueUnavailable, EmailBroadcastService, SystemBroadcastService
 from notifications.gate import evaluate_notification_readiness
 from notifications.token_utils import is_demo_fcm_token
 from common.drf import enforce_json_content_type
 from common.openapi import ApiErrorEnvelopeSerializer
 from common.permissions import IsAdminRole
 from common.throttles import AdminBroadcastThrottle, DeviceUpsertThrottle
+from logs.services import create_audit_log
 
 
 class DeviceUpsertAPIView(APIView):
@@ -131,34 +134,135 @@ class AdminBroadcastAPIView(APIView):
         ser.is_valid(raise_exception=True)
         data = ser.validated_data
 
-        user_model = request.user.__class__
-        users = user_model.objects.all()
         audience = data.get("audience", AdminBroadcastSerializer.Audience.ALL)
         district = data.get("district", "").strip()
 
-        if audience == AdminBroadcastSerializer.Audience.CUSTOMERS:
-            users = users.filter(role=user_model.Role.CUSTOMER)
-        elif audience == AdminBroadcastSerializer.Audience.BUSINESS_MEMBERS:
-            users = users.filter(
-                business_memberships__is_active=True,
-            ).distinct()
-
-        if district:
-            users = users.filter(
-                business_memberships__is_active=True,
-                business_memberships__business__district=district,
-            ).distinct()
-
-        count = 0
-        for user in users.iterator():
-            NotificationService.enqueue(
-                user=user,
-                type=Notification.Type.SYSTEM_BROADCAST,
+        try:
+            result = SystemBroadcastService.prepare_broadcast(
                 title=data["title"],
                 body=data["body"],
                 payload=data.get("payload") or {},
-                dedupe_key=f"broadcast:{data['title']}:{user.id}",
+                audience=audience,
+                district=district,
+                idempotency_key=str(request.headers.get("Idempotency-Key", "") or ""),
             )
-            count += 1
+        except BroadcastQueueUnavailable:
+            create_audit_log(
+                request=request,
+                user=request.user,
+                action="notifications.system_broadcast_queue_unavailable",
+                description="Admin system broadcast queue unavailable",
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                meta={"audience": audience, "district": district},
+            )
+            return Response(
+                {
+                    "ok": False,
+                    "error": {
+                        "code": "broadcast_queue_unavailable",
+                        "message": "Bildirim kuyruğu şu anda erişilebilir değil. Celery/Redis durumunu kontrol edip tekrar deneyin.",
+                    },
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
 
-        return Response({"queued": count}, status=200)
+        create_audit_log(
+            request=request,
+            user=request.user,
+            action="notifications.system_broadcast",
+            description="Admin system broadcast prepared",
+            status_code=200,
+            meta={
+                "broadcast_id": result.get("broadcast_id", ""),
+                "queued": result.get("queued", 0),
+                "estimated_count": result.get("estimated_count", 0),
+                "task_id": result.get("task_id", ""),
+                "queued_async": result.get("queued_async", False),
+                "audience": audience,
+                "district": district,
+            },
+        )
+
+        return Response(
+            {
+                "queued": result.get("queued", 0),
+                "broadcast_id": result.get("broadcast_id", ""),
+                "task_id": result.get("task_id", ""),
+                "queued_async": result.get("queued_async", False),
+            },
+            status=200,
+        )
+
+
+class AdminEmailBroadcastAPIView(APIView):
+    permission_classes = [IsAdminRole]
+    throttle_classes = [AdminBroadcastThrottle]
+
+    @extend_schema(operation_id="notification_admin_email_broadcast", request=AdminEmailBroadcastSerializer, responses={200: EmailBroadcastQueuedSerializer, 400: ApiErrorEnvelopeSerializer, 403: ApiErrorEnvelopeSerializer}, tags=["notifications"], examples=[OpenApiExample("Email broadcast dry run", value={"broadcast_id": "f3b1", "estimated_count": 124, "dry_run": True, "task_id": ""}, response_only=True)])
+    def post(self, request):
+        enforce_json_content_type(request)
+        ser = AdminEmailBroadcastSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        data = ser.validated_data
+
+        try:
+            result = EmailBroadcastService.prepare_broadcast(
+                subject=data["subject"],
+                message=data["message"],
+                audience=data.get("audience", AdminEmailBroadcastSerializer.Audience.ALL),
+                district=data.get("district", ""),
+                dry_run=bool(data.get("dry_run", True)),
+                idempotency_key=str(request.headers.get("Idempotency-Key", "") or ""),
+            )
+        except BroadcastQueueUnavailable:
+            create_audit_log(
+                request=request,
+                user=request.user,
+                action="notifications.email_broadcast_queue_unavailable",
+                description="Admin email broadcast queue unavailable",
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                meta={
+                    "audience": data.get("audience", ""),
+                    "district": data.get("district", ""),
+                    "dry_run": data.get("dry_run", True),
+                },
+            )
+            return Response(
+                {
+                    "ok": False,
+                    "error": {
+                        "code": "broadcast_queue_unavailable",
+                        "message": "Email kuyruğu şu anda erişilebilir değil. Celery/Redis durumunu kontrol edip tekrar deneyin.",
+                    },
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        create_audit_log(
+            request=request,
+            user=request.user,
+            action="notifications.email_broadcast",
+            description="Admin email broadcast prepared",
+            status_code=200,
+            meta={
+                "broadcast_id": result.get("broadcast_id", ""),
+                "estimated_count": result.get("estimated_count", 0),
+                "dry_run": result.get("dry_run", True),
+                "audience": data.get("audience", ""),
+                "district": data.get("district", ""),
+                "subject_hash": result.get("subject_hash", ""),
+                "task_id": result.get("task_id", ""),
+            },
+        )
+
+        return Response(
+            {
+                "broadcast_id": result.get("broadcast_id", ""),
+                "estimated_count": result.get("estimated_count", 0),
+                "dry_run": result.get("dry_run", True),
+                "task_id": result.get("task_id", ""),
+            },
+            status=200,
+        )

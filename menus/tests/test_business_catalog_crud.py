@@ -76,12 +76,24 @@ class BusinessCatalogCrudTests(TestCase):
 
     def test_menu_item_delete_soft_deletes(self):
         self.client.force_authenticate(self.manager)
+        offer = BusinessOffer.objects.create(
+            business=self.business,
+            menu_item=self.menu_item,
+            title="Gunluk burger",
+            offer_price_amount=2100,
+            starts_at="2026-04-16T10:00:00Z",
+            ends_at="2026-04-16T13:00:00Z",
+            is_active=True,
+        )
+
         resp = self.client.delete(f"/api/v1/businesses/{self.business.id}/menu-items/{self.menu_item.id}/")
         self.assertEqual(resp.status_code, 204)
         self.menu_item.refresh_from_db()
+        offer.refresh_from_db()
         self.assertFalse(self.menu_item.is_active)
         self.assertFalse(self.menu_item.is_visible)
         self.assertFalse(self.menu_item.is_available)
+        self.assertFalse(offer.is_active)
 
     def test_non_member_cannot_access_detail_endpoints(self):
         self.client.force_authenticate(self.other)

@@ -13,19 +13,31 @@ export function getBusinessListingTypeLabel(type?: BusinessListingType | string 
   return repairPotentialMojibake(fallbackLabel) || "İşletme";
 }
 
+export function isDemoBusinessCopy(value: string | null | undefined) {
+  const text = repairPotentialMojibake(value).toLocaleLowerCase("tr-TR");
+
+  return (
+    text.includes("other businesses ve kategori listeleri") ||
+    text.includes("ikinci görünür işletme") ||
+    text.includes("boş kalmasın") ||
+    text.includes("smoke test") ||
+    text.includes("demo") ||
+    text.includes("ürün omurgası") ||
+    text.includes("backend") ||
+    text.includes("endpoint")
+  );
+}
+
 export function getBusinessIntroText(input: { businessName: string; shortDescription?: string | null; introText?: string | null }) {
   const businessName = repairPotentialMojibake(input.businessName) || "Bu işletme";
   const shortDescription = repairPotentialMojibake(input.shortDescription);
   const introText = repairPotentialMojibake(input.introText);
 
-  const looksTechnical = (value: string) =>
-    /other businesses|smoke test|demo|ürün omurgası|backend|endpoint|boş kalmasın/i.test(value);
-
-  if (shortDescription && !looksTechnical(shortDescription)) {
+  if (shortDescription && !isDemoBusinessCopy(shortDescription)) {
     return shortDescription;
   }
 
-  if (introText && !looksTechnical(introText)) {
+  if (introText && !isDemoBusinessCopy(introText)) {
     return introText;
   }
 

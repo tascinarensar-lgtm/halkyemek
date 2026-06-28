@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 
 import { CategoryCard } from "@/components/discovery/category-card";
 import { DistrictPicker } from "@/components/discovery/district-picker";
+import { Badge } from "@/components/ui/Badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
@@ -46,6 +47,19 @@ export default function CategoriesPage() {
         description="Bölgenizdeki HalkYemek özel yemek seçeneklerini kategoriler eşliğinde tarayın ve dilediğiniz işletmelere hızla geçin."
         actions={<DistrictPicker />}
       />
+      {categories.length > 0 ? (
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {categories.slice(0, 10).map((category) => (
+            <Link
+              key={`chip-${category.id}`}
+              href={withSearchParams(`/kategoriler/${category.slug}`, { district })}
+              className="shrink-0 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-sm text-zinc-700 hover:border-zinc-300 hover:text-zinc-950"
+            >
+              {category.name}
+            </Link>
+          ))}
+        </div>
+      ) : null}
 
       <Card className="overflow-hidden border-stone-200 bg-[radial-gradient(circle_at_top_left,_rgba(251,191,36,0.18),_transparent_32%),linear-gradient(135deg,_rgba(255,251,235,0.96),_rgba(255,255,255,0.98))] shadow-sm">
         <CardContent className="grid gap-6 p-6 sm:p-8 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
@@ -109,6 +123,10 @@ export default function CategoriesPage() {
           </div>
         </CardContent>
       </Card>
+      <div className="flex flex-wrap gap-2">
+        <Badge tone="warning">Kategoriye göre keşif</Badge>
+        <Badge tone="primary">Yerel işletmeler</Badge>
+      </div>
 
       {categoriesQuery.isPending ? (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

@@ -18,7 +18,20 @@ from notifications.models import Notification
 from notifications.services import NotificationService
 from orders.models import Cart, CheckoutSession, Order, OrderItem, ORDER_QR_TTL_HOURS
 from orders.services_cart import CartComputationResult, CartService
+from orders.services_quota import (
+    commit_quota_for_checkout_session,
+    release_quota_for_checkout_session,
+    reserve_quota_for_checkout_session,
+)
 from payouts.services import build_business_earning_breakdown, create_business_earning_for_order
+from surprise_deals.models import SurpriseDealReservation
+from surprise_deals.services import release_surprise_deal_reservation
+from surprise_deals.services_consume import (
+    SurpriseDealConsumeInsufficientBalance,
+    SurpriseDealConsumeInvalidReservation,
+    SurpriseDealConsumeReservationNotFound,
+    consume_surprise_deal_checkout_session,
+)
 from wallets.models import Wallet
 from wallets.services import WalletService
 
@@ -83,6 +96,17 @@ def _expire_if_needed(session: CheckoutSession) -> CheckoutSession:
     } and session.expires_at <= timezone.now():
         session.status = CheckoutSession.Status.EXPIRED
         session.save(update_fields=["status", "updated_at"])
+        release_quota_for_checkout_session(session=session)
+        if session.source_type == CheckoutSession.SourceType.SURPRISE_DEAL:
+            reservation = SurpriseDealReservation.objects.filter(
+                checkout_session=session,
+                status=SurpriseDealReservation.Status.RESERVED,
+            ).only("id").first()
+            if reservation is not None:
+                release_surprise_deal_reservation(
+                    reservation_id=reservation.id,
+                    reason_status=SurpriseDealReservation.Status.EXPIRED,
+                )
         if session.cart_id and session.cart.status == Cart.Status.CHECKED_OUT:
             session.cart.status = Cart.Status.ABANDONED
             session.cart.abandoned_at = timezone.now()
@@ -191,11 +215,23 @@ def cancel_checkout_session(*, token: str, actor_user: User) -> CheckoutSession:
     session.cancelled_at = timezone.now()
     session.save(update_fields=["status", "cancelled_at", "updated_at"])
 
+    release_quota_for_checkout_session(session=session)
+    if session.source_type == CheckoutSession.SourceType.SURPRISE_DEAL:
+        reservation = SurpriseDealReservation.objects.filter(
+            checkout_session=session,
+            status=SurpriseDealReservation.Status.RESERVED,
+        ).only("id").first()
+        if reservation is not None:
+            release_surprise_deal_reservation(
+                reservation_id=reservation.id,
+                reason_status=SurpriseDealReservation.Status.CANCELLED,
+            )
     _release_checked_out_cart(session=session)
 
     return session
 
 
+@transaction.atomic
 def create_checkout_session(*, user: User, cart: Cart) -> CheckoutSession:
     if not user or not user.is_authenticated:
         raise CheckoutSessionForbidden("Authenticated user required.")
@@ -217,8 +253,17 @@ def create_checkout_session(*, user: User, cart: Cart) -> CheckoutSession:
 
     amount = int(result.pricing.total_payable_amount)
 
+    wallet = Wallet.objects.filter(user=user).only("balance", "is_active").first()
+    if not wallet:
+        raise CheckoutSessionInsufficientBalance("Wallet not found.")
+    if not wallet.is_active:
+        raise CheckoutSessionInsufficientBalance("Wallet is not active.")
+    if int(wallet.balance) < amount:
+        raise CheckoutSessionInsufficientBalance("Insufficient wallet balance.")
+
     reusable_session = _get_reusable_pending_session(user=user, cart=cart, amount=amount)
     if reusable_session is not None:
+        reserve_quota_for_checkout_session(session=reusable_session)
         return reusable_session
 
     session = CheckoutSession.objects.create(
@@ -240,6 +285,8 @@ def create_checkout_session(*, user: User, cart: Cart) -> CheckoutSession:
         cart_snapshot=cart.snapshot,
         expires_at=CheckoutSession.default_expiry(),
     )
+
+    reserve_quota_for_checkout_session(session=session)
 
     cart.status = Cart.Status.CHECKED_OUT
     cart.checked_out_at = timezone.now()
@@ -372,7 +419,7 @@ def build_checkout_session_consume_preview_by_identifier(*, identifier: str, act
 
 
 @transaction.atomic
-def consume_checkout_session(*, token: str, actor_user: User, business_id: int) -> CheckoutConsumeResult:
+def _consume_cart_checkout_session(*, token: str, actor_user: User, business_id: int) -> CheckoutConsumeResult:
     session = CheckoutSession.objects.select_for_update().select_related("user", "business", "cart").filter(token=token).first()
 
     if not session:
@@ -417,10 +464,32 @@ def consume_checkout_session(*, token: str, actor_user: User, business_id: int) 
             order_id=existing_order.id,
         )
 
+    if session.source_type == CheckoutSession.SourceType.SURPRISE_DEAL:
+        try:
+            surprise_result = consume_surprise_deal_checkout_session(
+                session=session,
+                actor_user=actor_user,
+            )
+        except SurpriseDealConsumeReservationNotFound as exc:
+            raise CheckoutSessionInvalidMenuItem(str(exc)) from exc
+        except SurpriseDealConsumeInvalidReservation as exc:
+            if "expired" in str(exc).lower():
+                raise CheckoutSessionExpired(str(exc)) from exc
+            raise CheckoutSessionInvalidMenuItem(str(exc)) from exc
+        except SurpriseDealConsumeInsufficientBalance as exc:
+            raise CheckoutSessionInsufficientBalance(str(exc)) from exc
+        return CheckoutConsumeResult(
+            session=surprise_result.session,
+            order=surprise_result.order,
+            amount=surprise_result.amount,
+        )
+
     cart_snapshot = session.cart_snapshot or {}
     cart_snapshot_items = list(cart_snapshot.get("items") or [])
     if not cart_snapshot_items:
         raise CheckoutSessionInvalidMenuItem("Checkout cart snapshot is empty.")
+
+    reserve_quota_for_checkout_session(session=session)
 
     if (
         not session.business.is_active
@@ -474,6 +543,7 @@ def consume_checkout_session(*, token: str, actor_user: User, business_id: int) 
         checkout_session=session,
     )
     order.mark_paid(ttl_hours=ORDER_QR_TTL_HOURS)
+    order.mark_used()
     order.save()
 
     for idx, item_payload in enumerate(cart_snapshot_items):
@@ -508,6 +578,8 @@ def consume_checkout_session(*, token: str, actor_user: User, business_id: int) 
     session.consumed_at = now
     session.consumed_by = actor_user
     session.save(update_fields=["status", "consumed_at", "consumed_by", "updated_at"])
+
+    commit_quota_for_checkout_session(session=session)
 
     if session.cart_id:
         cart = session.cart
@@ -546,3 +618,49 @@ def consume_checkout_session(*, token: str, actor_user: User, business_id: int) 
         )
 
     return CheckoutConsumeResult(session=session, order=order, amount=int(session.amount))
+
+
+def consume_checkout_session(*, token: str, actor_user: User, business_id: int) -> CheckoutConsumeResult:
+    session = CheckoutSession.objects.filter(token=token).select_related("business").first()
+    if not session:
+        raise CheckoutSessionNotFound("Checkout session not found.")
+
+    if session.source_type != CheckoutSession.SourceType.SURPRISE_DEAL:
+        return _consume_cart_checkout_session(token=token, actor_user=actor_user, business_id=business_id)
+
+    if session.business_id != business_id:
+        raise CheckoutSessionBusinessMismatch("Checkout session does not belong to this business.")
+
+    if session.status == CheckoutSession.Status.CONSUMED:
+        existing_order = Order.objects.filter(checkout_session=session).only("id").first()
+        raise CheckoutSessionAlreadyConsumed(
+            "Checkout session already consumed.",
+            order_id=existing_order.id if existing_order else None,
+        )
+    if session.status == CheckoutSession.Status.CANCELLED:
+        raise CheckoutSessionCancelled("Checkout session cancelled.")
+    if session.status not in {
+        CheckoutSession.Status.PENDING,
+        CheckoutSession.Status.CONFIRMED,
+    }:
+        raise CheckoutSessionError("Checkout session is not consumable.")
+
+    try:
+        surprise_result = consume_surprise_deal_checkout_session(
+            session=session,
+            actor_user=actor_user,
+        )
+    except SurpriseDealConsumeReservationNotFound as exc:
+        raise CheckoutSessionInvalidMenuItem(str(exc)) from exc
+    except SurpriseDealConsumeInvalidReservation as exc:
+        if "expired" in str(exc).lower():
+            raise CheckoutSessionExpired(str(exc)) from exc
+        raise CheckoutSessionInvalidMenuItem(str(exc)) from exc
+    except SurpriseDealConsumeInsufficientBalance as exc:
+        raise CheckoutSessionInsufficientBalance(str(exc)) from exc
+
+    return CheckoutConsumeResult(
+        session=surprise_result.session,
+        order=surprise_result.order,
+        amount=surprise_result.amount,
+    )

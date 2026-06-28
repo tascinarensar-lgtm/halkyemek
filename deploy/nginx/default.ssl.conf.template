@@ -1,0 +1,157 @@
+upstream halkyemek_backend {
+    server web:8000;
+}
+
+upstream halkyemek_frontend {
+    server frontend:3000;
+}
+
+gzip on;
+gzip_comp_level 5;
+gzip_min_length 256;
+gzip_proxied any;
+gzip_types text/plain text/css application/json application/javascript application/xml+rss image/svg+xml;
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${APP_DOMAIN} www.${APP_DOMAIN} ${API_DOMAIN};
+
+    client_max_body_size 20m;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name ${APP_DOMAIN} www.${APP_DOMAIN};
+
+    ssl_certificate /etc/letsencrypt/live/${APP_DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${APP_DOMAIN}/privkey.pem;
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_tickets off;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+
+    client_max_body_size 20m;
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+    add_header X-Frame-Options DENY always;
+
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header X-Forwarded-Port 443;
+    proxy_set_header Connection "";
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location /_next/static/ {
+        proxy_pass http://halkyemek_frontend;
+        expires 30d;
+        add_header Cache-Control "public, max-age=2592000, immutable";
+    }
+
+    location /_next/image/ {
+        proxy_pass http://halkyemek_frontend;
+        proxy_read_timeout 60s;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 60s;
+    }
+
+    location / {
+        proxy_pass http://halkyemek_frontend;
+        proxy_read_timeout 60s;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 60s;
+    }
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name ${API_DOMAIN};
+
+    ssl_certificate /etc/letsencrypt/live/${APP_DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${APP_DOMAIN}/privkey.pem;
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_tickets off;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+
+    client_max_body_size 20m;
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+    add_header X-Frame-Options DENY always;
+
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header X-Forwarded-Port 443;
+    proxy_set_header Connection "";
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location /static/ {
+        alias /srv/static/;
+        access_log off;
+        expires 30d;
+        add_header Cache-Control "public, max-age=2592000, immutable";
+    }
+
+    location /media/ {
+        alias /srv/media/;
+        expires 1h;
+        add_header Cache-Control "public, max-age=3600";
+    }
+
+    location /api/ {
+        proxy_pass http://halkyemek_backend;
+        proxy_read_timeout 60s;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 60s;
+    }
+
+    location /admin/ {
+        proxy_pass http://halkyemek_backend;
+        proxy_read_timeout 60s;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 60s;
+    }
+
+    location /health/ {
+        proxy_pass http://halkyemek_backend;
+        proxy_read_timeout 30s;
+        proxy_connect_timeout 5s;
+        proxy_send_timeout 30s;
+    }
+
+    location / {
+        return 404;
+    }
+}

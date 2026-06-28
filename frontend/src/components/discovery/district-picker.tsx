@@ -21,17 +21,17 @@ export function DistrictPicker({ className }: { className?: string }) {
 
   return (
     <div className={cn("flex flex-wrap items-center gap-2", className)}>
-      <span className="text-sm font-medium text-zinc-600">Aktif Bölge:</span>
+      <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Aktif bölge</span>
       {districts.map((district) => (
         <button
           key={district.code}
           type="button"
           onClick={() => updateDistrict(district.code)}
           className={cn(
-            "rounded-full border px-3 py-1.5 text-sm transition",
+            "rounded-full border px-3.5 py-2 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900/20",
             district.code === activeDistrict
-              ? "border-zinc-950 bg-zinc-950 text-white"
-              : "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300",
+              ? "border-zinc-950 bg-zinc-950 text-white shadow-sm"
+              : "border-zinc-300 bg-white text-zinc-800 hover:border-zinc-400 hover:bg-zinc-50",
           )}
         >
           {district.label}

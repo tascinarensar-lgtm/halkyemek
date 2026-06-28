@@ -32,6 +32,12 @@ TEMP_ROOT = Path(tempfile.gettempdir()).resolve()
     CSRF_TRUSTED_ORIGINS=["https://api.example.com"],
     CORS_ALLOWED_ORIGINS=["https://app.example.com"],
     CANONICAL_API_BASE_URL="https://api.example.com",
+    FRONTEND_APP_URL="https://app.example.com",
+    STATIC_URL="/static/",
+    STATIC_ROOT=str(TEMP_ROOT / "staticfiles"),
+    MEDIA_URL="/media/",
+    MEDIA_ROOT=str(TEMP_ROOT / "media"),
+    MEDIA_ASSET_MAX_BYTES=8 * 1024 * 1024,
     TRUST_X_FORWARDED_FOR=True,
     TRUSTED_PROXY_IPS=["10.0.0.0/8"],
     METRICS_TOKEN="metrics-secret-token",
@@ -41,9 +47,20 @@ TEMP_ROOT = Path(tempfile.gettempdir()).resolve()
     FCM_PROJECT_ID="fcm-project",
     FCM_CLIENT_EMAIL="fcm@example.com",
     FCM_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----\n",
+    EMAIL_NOTIFICATIONS_ENABLED=False,
+    EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
+    EMAIL_HOST="smtp.example.com",
+    EMAIL_PORT=587,
+    EMAIL_USE_TLS=True,
+    EMAIL_USE_SSL=False,
+    DEFAULT_FROM_EMAIL="HalkYemek <bildirim@example.com>",
+    NOTIFICATION_EMAIL_FROM="HalkYemek <bildirim@example.com>",
+    TOPUP_PROVIDER="iyzico",
+    MANUAL_TOPUP_ACCOUNT_NAME="HalkYemek",
     IYZICO_API_KEY="iyzico-key",
     IYZICO_SECRET_KEY="iyzico-secret",
     IYZICO_BASE_URL="https://sandbox-api.iyzipay.com",
+    PAYOUT_PROVIDER="iyzico_marketplace",
     PAYMENT_WEBHOOK_SECRET="webhook-secret-123",
     SETTLEMENT_IMPORT_INBOX_DIR=str(TEMP_ROOT / "inbox"),
     SETTLEMENT_IMPORT_ARCHIVE_DIR=str(TEMP_ROOT / "archive"),
@@ -96,7 +113,67 @@ class RuntimeValidationTests(SimpleTestCase):
             failures = collect_runtime_validation_failures()
         self.assertIn("IYZICO_ENV must be sandbox when APP_ENV=staging", failures)
 
+    def test_manual_money_provider_does_not_require_iyzico_keys(self) -> None:
+        with override_settings(
+            TOPUP_PROVIDER="manual",
+            PAYOUT_PROVIDER="manual",
+            MANUAL_TOPUP_ACCOUNT_NAME="HalkYemek",
+            IYZICO_API_KEY="",
+            IYZICO_SECRET_KEY="",
+        ):
+            failures = collect_runtime_validation_failures()
+        self.assertNotIn("IYZICO_API_KEY must be configured in staging/prod", failures)
+        self.assertNotIn("IYZICO_SECRET_KEY must be configured in staging/prod", failures)
+
     def test_payment_webhook_secret_must_be_long_enough(self) -> None:
         with override_settings(PAYMENT_WEBHOOK_SECRET="too-short"):
             failures = collect_runtime_validation_failures()
         self.assertIn("PAYMENT_WEBHOOK_SECRET must be at least 16 characters long in staging/prod", failures)
+
+    def test_frontend_app_url_must_use_https(self) -> None:
+        with override_settings(FRONTEND_APP_URL="http://app.example.com"):
+            failures = collect_runtime_validation_failures()
+        self.assertIn("FRONTEND_APP_URL must use https", failures)
+
+    def test_static_and_media_roots_must_be_different(self) -> None:
+        same_path = str(TEMP_ROOT / "assets")
+        with override_settings(STATIC_ROOT=same_path, MEDIA_ROOT=same_path):
+            failures = collect_runtime_validation_failures()
+        self.assertIn("STATIC_ROOT and MEDIA_ROOT must be different directories", failures)
+
+    def test_email_notifications_require_real_backend(self) -> None:
+        with override_settings(
+            EMAIL_NOTIFICATIONS_ENABLED=True,
+            EMAIL_BACKEND="django.core.mail.backends.console.EmailBackend",
+        ):
+            failures = collect_runtime_validation_failures()
+        self.assertIn(
+            "EMAIL_BACKEND must be a real SMTP/provider backend when EMAIL_NOTIFICATIONS_ENABLED=True",
+            failures,
+        )
+
+    def test_email_notifications_reject_tls_and_ssl_together(self) -> None:
+        with override_settings(
+            EMAIL_NOTIFICATIONS_ENABLED=True,
+            EMAIL_USE_TLS=True,
+            EMAIL_USE_SSL=True,
+        ):
+            failures = collect_runtime_validation_failures()
+        self.assertIn("EMAIL_USE_TLS and EMAIL_USE_SSL cannot both be True", failures)
+
+    def test_email_notifications_reject_local_sender_domains(self) -> None:
+        with override_settings(
+            EMAIL_NOTIFICATIONS_ENABLED=True,
+            EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
+            DEFAULT_FROM_EMAIL="HalkYemek <bildirim@halkyemek.local>",
+            NOTIFICATION_EMAIL_FROM="HalkYemek <bildirim@halkyemek.local>",
+        ):
+            failures = collect_runtime_validation_failures()
+        self.assertIn(
+            "DEFAULT_FROM_EMAIL must use a deliverable verified sender domain when EMAIL_NOTIFICATIONS_ENABLED=True",
+            failures,
+        )
+        self.assertIn(
+            "NOTIFICATION_EMAIL_FROM must use a deliverable verified sender domain when EMAIL_NOTIFICATIONS_ENABLED=True",
+            failures,
+        )

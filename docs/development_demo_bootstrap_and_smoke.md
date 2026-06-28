@@ -102,7 +102,7 @@ Beklenen:
 
 ### Customer
 Gerçek customer Google login sonrası:
-- `/sepet`
+- `/?cart=open`
 - `/checkout`
 - `/siparislerim`
 - `/siparislerim/{order_id}`

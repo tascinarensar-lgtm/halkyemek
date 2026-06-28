@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, LayoutGrid, MapPin, Star, Store } from "lucide-react";
+import { ArrowRight, LayoutGrid, MapPin, ShieldCheck, Store, Wallet } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 
+import { CustomerBottomSection } from "@/components/layout/customer-bottom-section";
 import { BusinessCard } from "@/components/discovery/business-card";
 import { DistrictPicker } from "@/components/discovery/district-picker";
+import { Badge } from "@/components/ui/Badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
@@ -31,138 +33,128 @@ export default function BusinessesPage() {
   const totalCount = businessesQuery.isSuccess ? businessesQuery.data.count : "-";
   const featuredCount = businesses.filter((business) => business.is_featured).length;
   const contractedCount = businesses.filter((business) => business.listing_type === "CONTRACTED").length;
-  const volunteerCount = businesses.filter((business) => business.listing_type === "VOLUNTEER").length;
 
   return (
-    <PageContainer className="space-y-10">
-      <Card className="overflow-hidden border-stone-200 bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.16),_transparent_34%),linear-gradient(135deg,_rgba(248,250,252,0.98),_rgba(255,255,255,0.98))] shadow-sm">
-        <CardContent className="space-y-6 p-6 sm:p-8">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-            <div className="space-y-4">
-              <span className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-white/90 px-3 py-1 text-xs font-medium text-sky-900">
-                <Store className="h-3.5 w-3.5" /> İşletme keşif alanı
-              </span>
-              <div className="space-y-3">
-                <h1 className="text-3xl font-semibold tracking-tight text-zinc-950 sm:text-4xl">
-                  HalkYemek özel işletmelere tek ekranda eriş.
-                </h1>
-                <p className="max-w-3xl text-sm leading-6 text-zinc-600 sm:text-base">
-                  Bölgenizdeki HalkYemek işletmelerini tek listede görün, öne çıkanları ayırt edin, menülerine göz atın
-                  ve dilediğiniz işletmeye hızlıca geçin.
-                </p>
+    <PageContainer className="space-y-5 bg-white sm:space-y-6">
+      <Card className="border-stone-200 bg-[linear-gradient(135deg,_rgba(245,5,85,0.07),_rgba(255,255,255,0.96))] shadow-sm">
+        <CardContent className="space-y-4 p-5 sm:p-6">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div className="space-y-2.5">
+              <div className="flex flex-wrap gap-2">
+                <Badge tone="secondary">Anlaşmalı işletmeler</Badge>
+                <Badge tone="primary">Halk fiyatı</Badge>
               </div>
-              <div className="flex flex-wrap gap-3">
-                <Link
-                  href={withSearchParams("/kategoriler", { district })}
-                  className="inline-flex items-center gap-2 rounded-xl bg-zinc-950 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800"
-                >
-                  Kategorilerden başla
-                  <ArrowRight className="h-4 w-4" />
-                </Link>
-                {!isAuthenticated ? (
-                  <Link
-                    href="/giris"
-                    className="inline-flex rounded-xl border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-900 hover:bg-zinc-50"
-                  >
-                    Giriş yap
-                  </Link>
-                ) : null}
-              </div>
-            </div>
-
-            <div className="shrink-0">
-              <DistrictPicker />
-            </div>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-3xl border border-sky-100 bg-white/92 p-5 shadow-sm backdrop-blur">
-              <div className="flex items-center gap-2 text-sm font-medium text-sky-900">
-                <MapPin className="h-4 w-4" /> Aktif Bölge
-              </div>
-              <p className="mt-3 text-lg font-semibold text-zinc-950">{districtLabel}</p>
-              <p className="mt-2 text-sm leading-6 text-zinc-600">Liste şu anda bu bölgedeki işletmeler üzerinden hazırlanır.</p>
-            </div>
-            <div className="rounded-3xl border border-white/80 bg-white/92 p-5 shadow-sm backdrop-blur">
-              <div className="flex items-center gap-2 text-sm font-medium text-zinc-700">
-                <Store className="h-4 w-4" /> Toplam işletme
-              </div>
-              <p className="mt-3 text-lg font-semibold text-zinc-950">{totalCount}</p>
-              <p className="mt-2 text-sm leading-6 text-zinc-600">Bölgedeki tüm görünür işletmeler tek ekranda listelenir.</p>
-            </div>
-            <div className="rounded-3xl border border-white/80 bg-white/92 p-5 shadow-sm backdrop-blur">
-              <div className="flex items-center gap-2 text-sm font-medium text-zinc-700">
-                <Star className="h-4 w-4" /> Öne çıkan işletme
-              </div>
-              <p className="mt-3 text-lg font-semibold text-zinc-950">{businessesQuery.isSuccess ? featuredCount : "-"}</p>
-              <p className="mt-2 text-sm leading-6 text-zinc-600">Öne çıkanlar kartlar arasında daha hızlı fark edilir.</p>
-            </div>
-            <div className="rounded-3xl border border-white/80 bg-white/92 p-5 shadow-sm backdrop-blur">
-              <div className="flex items-center gap-2 text-sm font-medium text-zinc-700">
-                <LayoutGrid className="h-4 w-4" /> İşletme tipi dağılımı
-              </div>
-              <p className="mt-3 text-lg font-semibold text-zinc-950">
-                {businessesQuery.isSuccess ? `${contractedCount} anlaşmalı · ${volunteerCount} gönüllü` : "-"}
+              <h1 className="text-2xl font-semibold tracking-tight text-zinc-950 sm:text-3xl">Anlaşmalı işletmeleri keşfet</h1>
+              <p className="max-w-3xl text-sm leading-6 text-zinc-600">
+                Cüzdan bakiyesiyle güvenli ödeme yap, QR ile işletmede hızlı tüketim akışına geç.
               </p>
-              <p className="mt-2 text-sm leading-6 text-zinc-600">İşletmeleri yapılarına göre daha kolay karşılaştırabilirsin.</p>
             </div>
+            <Link
+              href={withSearchParams("/kategoriler", { district })}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-zinc-950 px-4 py-2.5 text-sm font-medium text-white transition hover:-translate-y-0.5 hover:bg-zinc-800"
+            >
+              İşletmeleri keşfet
+              <ArrowRight className="h-4 w-4" />
+            </Link>
           </div>
         </CardContent>
       </Card>
 
-      {businessesQuery.isPending ? (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, index) => (
-            <LoadingSkeleton key={index} />
-          ))}
-        </div>
-      ) : businessesQuery.isError ? (
-        <ErrorState
-          title="İşletme listesi alınamadı"
-          description={describeApiError(businessesQuery.error, "İşletme listesi şu anda getirilemedi. Lütfen bağlantıyı tekrar kontrol edin.")}
-        />
-      ) : businesses.length ? (
-        <>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {businesses.map((business) => (
-              <BusinessCard key={business.id} business={business} district={district} />
-            ))}
-          </div>
-
-          <Card className="overflow-hidden border-stone-200 bg-[radial-gradient(circle_at_top_right,_rgba(14,165,233,0.12),_transparent_36%),linear-gradient(135deg,_rgba(255,255,255,1),_rgba(248,250,252,0.96))]">
-            <CardContent className="flex flex-col gap-5 p-5 sm:p-6 md:flex-row md:items-center md:justify-between">
-              <div className="space-y-2">
-                <h3 className="text-lg font-semibold text-zinc-950">Karar vermeyi hızlandırmak istersen önce kategori seç.</h3>
-                <p className="max-w-2xl text-sm leading-6 text-zinc-600">
-                  Yemek türüne göre ilerlemek istersen kategoriler sayfasından başlayabilir, ardından ilgili işletmelere daha hızlı ulaşabilirsin.
-                </p>
+      <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)] xl:grid-cols-[320px_minmax(0,1fr)]">
+        <aside className="space-y-4 lg:sticky lg:top-24 lg:self-start">
+          <Card className="border-stone-200 bg-white">
+            <CardContent className="space-y-4 p-4 sm:p-5">
+              <div className="space-y-1">
+                <h2 className="text-sm font-semibold text-zinc-900">Keşif bölgesi</h2>
+                <p className="text-xs leading-5 text-zinc-600">İşletmeler bu bölgeye göre listelenir.</p>
               </div>
-              <div className="flex flex-wrap gap-3">
-                <Link
-                  href={withSearchParams("/kategoriler", { district })}
-                  className="inline-flex items-center gap-2 rounded-xl bg-zinc-950 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800"
-                >
-                  Kategorilere geç
-                  <ArrowRight className="h-4 w-4" />
-                </Link>
-                {!isAuthenticated ? (
-                  <Link
-                    href="/giris"
-                    className="inline-flex rounded-xl border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-900 hover:bg-zinc-50"
-                  >
-                    Giriş yap
-                  </Link>
-                ) : null}
+              <DistrictPicker />
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2">
+                  <p className="text-xs text-zinc-500">Toplam</p>
+                  <p className="font-semibold text-zinc-950">{totalCount}</p>
+                </div>
+                <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2">
+                  <p className="text-xs text-zinc-500">Anlaşmalı</p>
+                  <p className="font-semibold text-zinc-950">{businessesQuery.isSuccess ? contractedCount : "-"}</p>
+                </div>
               </div>
             </CardContent>
           </Card>
-        </>
-      ) : (
-        <EmptyState
-          title="İşletme bulunamadı"
-          description="Bu bölgede şu anda listelenen işletme görünmüyor. Bölgeyi kontrol ederek yeniden deneyebilirsin."
-        />
-      )}
+
+          <Card className="border-stone-200 bg-white">
+            <CardContent className="space-y-3 p-4 sm:p-5">
+              <h3 className="text-sm font-semibold text-zinc-900">Nasıl çalışır?</h3>
+              <ul className="space-y-2 text-xs leading-5 text-zinc-600">
+                <li className="flex items-start gap-2"><Store className="mt-0.5 h-3.5 w-3.5 shrink-0" /> İşletmeni seç, menüyü aç.</li>
+                <li className="flex items-start gap-2"><Wallet className="mt-0.5 h-3.5 w-3.5 shrink-0" /> Cüzdanla ödemeni tamamla.</li>
+                <li className="flex items-start gap-2"><ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" /> QR kodunu kasada okut.</li>
+              </ul>
+              {!isAuthenticated ? (
+                <Link
+                  href="/giris"
+                  className="inline-flex w-full items-center justify-center rounded-xl border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-900 transition hover:bg-zinc-50"
+                >
+                  Giriş yap
+                </Link>
+              ) : null}
+            </CardContent>
+          </Card>
+        </aside>
+
+        <section className="space-y-4">
+          <Card className="border-stone-200 bg-white">
+            <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4 sm:p-5">
+              <div>
+                <h2 className="text-lg font-semibold text-zinc-950">İşletme listesi</h2>
+                <p className="text-sm text-zinc-600">{districtLabel} bölgesindeki görünür işletmeler</p>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-zinc-600">
+                <LayoutGrid className="h-3.5 w-3.5" />
+                <span>{businessesQuery.isSuccess ? featuredCount : "-"} öne çıkan</span>
+              </div>
+            </CardContent>
+          </Card>
+
+          {businessesQuery.isPending ? (
+            <div className="grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-3">
+              {Array.from({ length: 6 }).map((_, index) => (
+                <LoadingSkeleton key={index} />
+              ))}
+            </div>
+          ) : businessesQuery.isError ? (
+            <ErrorState
+              title="İşletme listesi alınamadı"
+              description={describeApiError(businessesQuery.error, "İşletme listesi şu anda getirilemedi. Bölge veya bağlantı ayarını tekrar kontrol edin.")}
+            />
+          ) : businesses.length ? (
+            <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+              {businesses.map((business) => (
+                <BusinessCard key={business.id} business={business} district={district} />
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              title="Bu bölgede işletme görünmüyor"
+              description="Şu anda listelenen bir işletme bulunamadı. Bölge seçimini kontrol ederek kısa süre sonra yeniden deneyebilirsin."
+            />
+          )}
+
+          <Card className="border-stone-200 bg-zinc-50">
+            <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4 sm:p-5">
+              <div className="flex items-center gap-2 text-sm text-zinc-700">
+                <MapPin className="h-4 w-4" /> {districtLabel}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge tone="primary">QR ile tüketim</Badge>
+                <Badge tone="secondary">Cüzdan bakiyesi</Badge>
+              </div>
+            </CardContent>
+          </Card>
+        </section>
+      </div>
+
+      <CustomerBottomSection />
     </PageContainer>
   );
 }

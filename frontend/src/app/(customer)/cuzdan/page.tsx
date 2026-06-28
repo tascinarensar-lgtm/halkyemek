@@ -1,53 +1,164 @@
 "use client";
 
-import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
-import { ArrowRightLeft, ReceiptText, ShieldCheck, Wallet } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { CreditCard, Loader2, Plus, Settings, Wallet, X } from "lucide-react";
 
-import { NotificationReadinessBanner } from "@/components/notifications/readiness-banner";
-import { NotificationReadinessSummaryCard } from "@/components/notifications/readiness-summary-card";
+import { CustomerBottomSection } from "@/components/layout/customer-bottom-section";
 import { AmountText } from "@/components/ui/amount-text";
-import { Card, CardContent } from "@/components/ui/card";
-import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { LoadingSkeleton } from "@/components/ui/loading-skeleton";
 import { PageContainer } from "@/components/ui/page-container";
-import { SectionHeader } from "@/components/ui/section-header";
-import { getNotificationReadiness } from "@/features/notifications/api";
+import { createTopupIntent } from "@/features/payments/api";
 import { getWalletDetail, getWalletTransactions } from "@/features/wallet/api";
-import type { WalletTransaction } from "@/features/wallet/types";
 import { getWalletTransactionLabel } from "@/features/wallet/presentation";
-import { isNotificationReadinessError } from "@/lib/api/errors";
 import { describeApiError } from "@/lib/api/presentation";
 import { formatDateTime } from "@/lib/utils/format";
 
-function getWalletHealthMessage(input: { ledgerInSync: boolean; pendingLedgerInSync: boolean }) {
-  if (input.ledgerInSync && input.pendingLedgerInSync) {
-    return {
-      title: "Cüzdan bakiyen güncel görünüyor",
-      description: "Kullanılabilir ve bekleyen tutarlar şu an sistemle uyumlu şekilde görüntüleniyor.",
-      tone: "success" as const,
-    };
-  }
-  return {
-    title: "Cüzdan verileri güncelleniyor",
-    description: "Bazı bakiyeler kısa süreli olarak eşitleniyor olabilir. Sayfayı biraz sonra yenileyerek son durumu tekrar görebilirsin.",
-    tone: "warning" as const,
-  };
+const QUICK_AMOUNTS = [100, 250, 500, 1000];
+function normalizeAmountInput(value: string) {
+  return value.replace(/[^0-9]/g, "").slice(0, 7);
 }
 
-function getTransactionContext(tx: WalletTransaction) {
-  if (tx.order_id) {
-    return `Sipariş no: #${tx.order_id}`;
-  }
-  if (tx.payment_intent_id) {
-    return `Yükleme işlemi: #${tx.payment_intent_id}`;
-  }
-  return "Cüzdan işlemi";
+function TopupModal({ initialAmount, onClose }: { initialAmount?: number; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const router = useRouter();
+  const [amount, setAmount] = useState(() => String(initialAmount && initialAmount > 0 ? initialAmount : 250));
+  const [providerUrl, setProviderUrl] = useState<string | null>(null);
+  const numericAmount = Number(amount || 0);
+  const isValid = Number.isFinite(numericAmount) && numericAmount >= 1;
+
+  const createMutation = useMutation({
+    mutationFn: createTopupIntent,
+    onSuccess: async (intent) => {
+      queryClient.setQueryData(["topup", "intent", intent.id], intent);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["topup"] }),
+        queryClient.invalidateQueries({ queryKey: ["wallet"] }),
+      ]);
+
+      if (intent.provider_page_url) {
+        setProviderUrl(intent.provider_page_url);
+        toast.success("Ödeme bağlantısı hazır.");
+        return;
+      }
+
+      toast.success("Bakiye talebi alındı.", { description: "Onay sonrası cüzdanına yansır." });
+      onClose();
+      router.replace("/cuzdan", { scroll: false });
+    },
+    onError: (error) => toast.error(describeApiError(error, "Bakiye yükleme başlatılamadı.")),
+  });
+
+  const submitTopup = () => {
+    if (!isValid || createMutation.isPending) return;
+    createMutation.mutate({ amount: numericAmount });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/55 px-0 py-0 backdrop-blur-sm sm:items-center sm:px-4 sm:py-6" onMouseDown={onClose}>
+      <div
+        className="hy-mobile-sheet w-full max-w-[460px] overflow-hidden rounded-t-[30px] bg-white shadow-[0_30px_90px_rgba(15,23,42,0.32)] transition duration-200 sm:rounded-[30px]"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="topup-modal-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="relative bg-[#f50555] px-6 pb-20 pt-6 text-white">
+          <button
+            type="button"
+            onClick={onClose}
+            className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/15 text-white transition hover:bg-white hover:text-zinc-950"
+            aria-label="Bakiye yükleme kartını kapat"
+          >
+            <X className="h-5 w-5" />
+          </button>
+          <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15">
+            <CreditCard className="h-6 w-6" />
+          </div>
+          <h2 id="topup-modal-title" className="mt-5 text-2xl font-semibold tracking-[-0.04em]">
+            Bakiye yükle
+          </h2>
+          <p className="mt-2 max-w-sm text-sm leading-6 text-white/86">
+            Yüklemek istediğin tutarı seç, ödeme adımını güvenli şekilde başlat.
+          </p>
+        </div>
+
+        <div className="-mt-12 space-y-5 px-5 pb-6">
+          <div className="rounded-[24px] border border-zinc-100 bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.12)]">
+            <label className="text-sm font-medium text-zinc-600" htmlFor="topup-amount">
+              Yüklenecek tutar
+            </label>
+            <div className="mt-3 flex items-end gap-2">
+              <input
+                id="topup-amount"
+                type="text"
+                inputMode="numeric"
+                value={amount}
+                onChange={(event) => setAmount(normalizeAmountInput(event.target.value))}
+                className="min-w-0 flex-1 border-0 bg-transparent text-3xl font-semibold tracking-[-0.06em] text-zinc-950 outline-none placeholder:text-zinc-300 sm:text-4xl"
+                placeholder="0"
+                disabled={createMutation.isPending}
+              />
+              <span className="pb-2 text-xl font-semibold text-zinc-500">TL</span>
+            </div>
+            {!isValid ? <p className="mt-2 text-sm text-red-600">Tutar en az 1 TL olmalı.</p> : null}
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {QUICK_AMOUNTS.map((quickAmount) => {
+              const isSelected = numericAmount === quickAmount;
+              return (
+                <button
+                  key={quickAmount}
+                  type="button"
+                  onClick={() => setAmount(String(quickAmount))}
+                  disabled={createMutation.isPending}
+                  className={`rounded-2xl border px-3 py-3 text-sm font-semibold transition ${
+                    isSelected
+                      ? "border-[#f50555] bg-[#f50555] text-white shadow-[0_12px_28px_rgba(245,5,85,0.24)]"
+                      : "border-zinc-200 bg-white text-zinc-700 hover:-translate-y-0.5 hover:border-[#f50555]/35 hover:bg-rose-50 hover:text-[#f50555]"
+                  }`}
+                >
+                  {quickAmount} TL
+                </button>
+              );
+            })}
+          </div>
+
+          <button
+            type="button"
+            onClick={submitTopup}
+            disabled={!isValid || createMutation.isPending || Boolean(providerUrl)}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#f50555] px-5 py-4 text-sm font-semibold text-white shadow-[0_18px_40px_rgba(245,5,85,0.24)] transition hover:-translate-y-0.5 hover:bg-[#dc004c] disabled:translate-y-0 disabled:cursor-not-allowed disabled:bg-zinc-300 disabled:shadow-none"
+          >
+            {createMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+            {createMutation.isPending ? "Ödeme hazırlanıyor" : providerUrl ? "Ödeme bağlantısı hazır" : "Ödeme adımını başlat"}
+          </button>
+
+          {providerUrl ? (
+            <a
+              href={providerUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex w-full items-center justify-center rounded-2xl border border-zinc-200 bg-white px-5 py-4 text-sm font-semibold text-zinc-950 transition hover:-translate-y-0.5 hover:border-[#f50555]/35 hover:bg-rose-50 hover:text-[#f50555]"
+            >
+              Güvenli ödeme ekranını aç
+            </a>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function WalletPage() {
-  const readinessQuery = useQuery({ queryKey: ["notifications", "readiness"], queryFn: getNotificationReadiness, retry: 0 });
+  const searchParams = useSearchParams();
+  const requestedAmountParam = Number(searchParams.get("amount") || 0);
+  const requestedAmount = Number.isFinite(requestedAmountParam) && requestedAmountParam > 0 ? Math.ceil(requestedAmountParam) : 0;
+  const [isTopupOpen, setIsTopupOpen] = useState(false);
   const walletQuery = useQuery({ queryKey: ["wallet", "detail"], queryFn: getWalletDetail, retry: 0 });
   const transactionsQuery = useQuery({
     queryKey: ["wallet", "transactions", "preview"],
@@ -55,252 +166,96 @@ export default function WalletPage() {
     retry: 0,
   });
 
-  const walletBlockedByReadiness = walletQuery.isError && isNotificationReadinessError(walletQuery.error);
-  const txBlockedByReadiness = transactionsQuery.isError && isNotificationReadinessError(transactionsQuery.error);
-  const healthMessage = walletQuery.data
-    ? getWalletHealthMessage({
-        ledgerInSync: walletQuery.data.ledger_in_sync,
-        pendingLedgerInSync: walletQuery.data.pending_ledger_in_sync,
-      })
-    : null;
+  const recentTransactions = useMemo(() => transactionsQuery.data?.results.slice(0, 4) ?? [], [transactionsQuery.data]);
+
+  useEffect(() => {
+    if (searchParams.get("topup") === "1" || requestedAmount > 0) {
+      setIsTopupOpen(true);
+    }
+  }, [requestedAmount, searchParams]);
 
   return (
-    <PageContainer className="space-y-6">
-      <SectionHeader
-        title="Cüzdan"
-        description="Bakiyeni, son hareketlerini ve bekleyen tutarlarını tek ekranda takip edebilir; ihtiyaç halinde yeni yükleme adımına geçebilirsin."
-        actions={
-          <Link href="/cuzdan/yukle" className="rounded-xl bg-zinc-950 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800">
-            Bakiye yükle
-          </Link>
-        }
-      />
+    <PageContainer className="space-y-8 bg-white">
+      <section className="overflow-hidden rounded-[30px] bg-white shadow-[0_24px_80px_rgba(15,23,42,0.08)] ring-1 ring-zinc-100">
+        <div className="bg-[#f50555] px-5 pb-20 pt-6 text-white sm:px-7 sm:pt-7">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-white/15">
+                <Wallet className="h-6 w-6" />
+              </span>
+              <h1 className="text-2xl font-semibold tracking-[-0.04em] sm:text-3xl">Cüzdan</h1>
+            </div>
+            <button
+              type="button"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-white/12 text-white transition hover:-translate-y-0.5 hover:bg-white hover:text-zinc-950"
+              aria-label="Cüzdan ayarları"
+            >
+              <Settings className="h-5 w-5" />
+            </button>
+          </div>
+        </div>
 
-      <NotificationReadinessBanner readiness={readinessQuery.data} />
+        <div className="-mt-14 px-4 pb-5 sm:px-6 sm:pb-6">
+          <div className="rounded-[24px] border border-zinc-100 bg-white p-5 shadow-[0_18px_52px_rgba(15,23,42,0.14)] sm:p-6">
+            <p className="text-sm font-medium text-zinc-600">Mevcut Bakiyeniz</p>
+            <div className="mt-3 text-4xl font-semibold tracking-[-0.06em] text-zinc-950 sm:text-5xl">
+              {walletQuery.data ? <AmountText amount={walletQuery.data.balance} /> : walletQuery.isPending ? "Yükleniyor" : <AmountText amount={0} />}
+            </div>
+            <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setIsTopupOpen(true)}
+                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-2xl bg-[#f50555] px-5 py-3 text-sm font-semibold text-white shadow-[0_16px_34px_rgba(245,5,85,0.22)] transition hover:-translate-y-0.5 hover:bg-[#dc004c]"
+              >
+                <Plus className="h-4 w-4" />
+                Bakiye yükle
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
 
       {walletQuery.isPending ? <LoadingSkeleton /> : null}
-      {walletBlockedByReadiness ? (
+      {walletQuery.isError ? (
         <ErrorState
-          title="Cüzdan ekranı şu anda hazır değil"
-          description="Cüzdan ve ödeme adımlarını sorunsuz kullanabilmek için en az bir aktif ve izinli cihaz gerekiyor."
-        />
-      ) : null}
-      {walletQuery.isError && !walletBlockedByReadiness ? (
-        <ErrorState
-          title="Cüzdan özeti yüklenemedi"
+          title="Cüzdan bilgisi yüklenemedi"
           description={describeApiError(walletQuery.error, "Cüzdan bilgileri şu anda getirilemedi. Lütfen daha sonra tekrar dene.")}
         />
       ) : null}
 
-      {walletQuery.data ? (
-        <>
-          <div className="grid gap-4 lg:grid-cols-[1.12fr_0.88fr]">
-            <Card className="overflow-hidden border-stone-200 bg-[radial-gradient(circle_at_top_left,_rgba(251,191,36,0.12),_transparent_36%),linear-gradient(135deg,_rgba(255,255,255,0.98),_rgba(250,250,249,0.95))]">
-              <CardContent className="space-y-5 p-6">
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div className="space-y-3">
-                    <div className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-900">
-                      <Wallet className="h-3.5 w-3.5" /> HalkYemek cüzdan özeti
-                    </div>
-                    <div>
-                      <h2 className="text-2xl font-semibold tracking-tight text-zinc-950">Bakiyen burada hazır</h2>
-                      <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-600">
-                        Kullanılabilir tutarını, bekleyen bakiyeni ve son işlemlerini tek yerde görerek sipariş ve yükleme akışını daha rahat yönetebilirsin.
-                      </p>
-                    </div>
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-2xl border border-white/80 bg-white/85 p-4 shadow-sm">
-                      <div className="text-xs font-medium uppercase tracking-[0.16em] text-zinc-500">Kullanılabilir bakiye</div>
-                      <div className="mt-2 text-2xl font-semibold text-zinc-950">
-                        <AmountText amount={walletQuery.data.balance} />
-                      </div>
-                    </div>
-                    <div className="rounded-2xl border border-white/80 bg-white/85 p-4 shadow-sm">
-                      <div className="text-xs font-medium uppercase tracking-[0.16em] text-zinc-500">Bekleyen bakiye</div>
-                      <div className="mt-2 text-2xl font-semibold text-zinc-950">
-                        <AmountText amount={walletQuery.data.pending_balance} />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <div className="rounded-2xl bg-white/80 p-4 shadow-sm">
-                    <div className="text-xs font-medium uppercase tracking-[0.16em] text-zinc-500">Cüzdan durumu</div>
-                    <div className="mt-2 text-sm font-semibold text-zinc-950">
-                      {walletQuery.data.is_active ? "Kullanıma hazır" : "Geçici olarak kısıtlı"}
-                    </div>
-                  </div>
-                  <div className="rounded-2xl bg-white/80 p-4 shadow-sm">
-                    <div className="text-xs font-medium uppercase tracking-[0.16em] text-zinc-500">Son güncelleme</div>
-                    <div className="mt-2 text-sm font-semibold text-zinc-950">{formatDateTime(walletQuery.data.updated_at)}</div>
-                  </div>
-                  <div className="rounded-2xl bg-white/80 p-4 shadow-sm">
-                    <div className="text-xs font-medium uppercase tracking-[0.16em] text-zinc-500">Hesap açılışı</div>
-                    <div className="mt-2 text-sm font-semibold text-zinc-950">{formatDateTime(walletQuery.data.created_at)}</div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-stone-200 bg-zinc-950 text-white">
-              <CardContent className="space-y-4 p-6">
-                <div className="flex items-center gap-2 text-sm font-medium text-zinc-200">
-                  <ShieldCheck className="h-4 w-4" /> Cüzdan durumu
-                </div>
-
-                {healthMessage ? (
-                  <div
-                    className={`rounded-2xl p-4 text-sm leading-6 ${
-                      healthMessage.tone === "success"
-                        ? "bg-emerald-400/10 text-emerald-100"
-                        : "bg-amber-400/10 text-amber-100"
-                    }`}
-                  >
-                    <div className="font-medium">{healthMessage.title}</div>
-                    <p className="mt-2">{healthMessage.description}</p>
-                  </div>
-                ) : null}
-
-                <div className="space-y-4 text-sm text-zinc-200">
-                  <div className="flex gap-3">
-                    <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/10 text-xs font-semibold">1</span>
-                    <p>Kullanılabilir bakiye siparişlerde hemen kullanabileceğin tutarı gösterir.</p>
-                  </div>
-                  <div className="flex gap-3">
-                    <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/10 text-xs font-semibold">2</span>
-                    <p>Bekleyen bakiye kısa süre içinde netleşecek işlemleri ayrı görmeni sağlar.</p>
-                  </div>
-                  <div className="flex gap-3">
-                    <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/10 text-xs font-semibold">3</span>
-                    <p>Hareket geçmişi üzerinden ödeme, yükleme ve iade akışlarını kolayca takip edebilirsin.</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          <div className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
-            <Card className="border-stone-200">
-              <CardContent className="space-y-5 p-6">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <h2 className="text-lg font-semibold text-zinc-950">Son hareketler</h2>
-                    <p className="mt-1 text-sm leading-6 text-zinc-600">
-                      Cüzdanındaki son işlemleri burada özet olarak görebilir, istersen tüm hareket geçmişine geçebilirsin.
-                    </p>
-                  </div>
-                  <Link href="/cuzdan/hareketler" className="text-sm font-medium text-zinc-700 hover:text-zinc-950">
-                    Tümünü aç
-                  </Link>
-                </div>
-
-                {transactionsQuery.isPending ? <LoadingSkeleton /> : null}
-                {txBlockedByReadiness ? (
-                  <ErrorState
-                    title="Hareketler şu anda gösterilemiyor"
-                    description="İşlem geçmişini görebilmek için bildirim hazırlığının tamamlanması gerekiyor."
-                  />
-                ) : null}
-                {transactionsQuery.isError && !txBlockedByReadiness ? (
-                  <ErrorState
-                    title="Hareket özeti yüklenemedi"
-                    description={describeApiError(transactionsQuery.error, "İşlem geçmişi şu anda getirilemedi. Lütfen daha sonra tekrar dene.")}
-                  />
-                ) : null}
-                {transactionsQuery.data?.results.length === 0 ? (
-                  <EmptyState title="Henüz cüzdan hareketi yok" description="Bakiye yüklediğinde veya sipariş verdiğinde işlemler burada görünmeye başlayacak." />
-                ) : null}
-
-                {transactionsQuery.data?.results.slice(0, 5).map((tx) => (
-                  <div key={tx.id} className="rounded-2xl bg-zinc-50 p-4 text-sm">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="font-medium text-zinc-950">{getWalletTransactionLabel(tx.transaction_type)}</p>
-                        <p className="mt-1 text-zinc-500">{tx.description || "Bu işlem için ek açıklama bulunmuyor."}</p>
-                      </div>
-                      <AmountText amount={tx.amount} />
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-2 text-xs text-zinc-500">
-                      <span className="rounded-full bg-white px-2.5 py-1">İşlem zamanı: {formatDateTime(tx.created_at)}</span>
-                      <span className="rounded-full bg-white px-2.5 py-1">{getTransactionContext(tx)}</span>
-                    </div>
-                  </div>
-                ))}
-
-                <div className="flex flex-wrap gap-2">
-                  <Link href="/cuzdan/hareketler" className="rounded-xl bg-zinc-950 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800">
-                    Tüm hareketler
-                  </Link>
-                  <Link href="/cuzdan/bekleyen-islemler" className="rounded-xl bg-zinc-100 px-4 py-2 text-sm font-medium text-zinc-900 hover:bg-zinc-200">
-                    Bekleyen işlemler
-                  </Link>
-                </div>
-              </CardContent>
-            </Card>
-
-            <div className="space-y-6">
-              <NotificationReadinessSummaryCard readiness={readinessQuery.data} />
-
-              <Card className="border-stone-200">
-                <CardContent className="space-y-5 p-6">
-                  <div className="flex items-start gap-3">
-                    <ArrowRightLeft className="mt-0.5 h-5 w-5 text-zinc-700" />
-                    <div>
-                      <h2 className="text-lg font-semibold text-zinc-950">Cüzdanı nasıl kullanırsın?</h2>
-                      <p className="mt-1 text-sm leading-6 text-zinc-600">
-                        Bakiye yükleme ve sipariş ödemesi arasındaki ilişkiyi tek bakışta anlayabileceğin kısa bir özet.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="space-y-4 text-sm text-zinc-700">
-                    <div className="flex gap-3">
-                      <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-xs font-semibold text-white">1</span>
-                      <p>Cüzdanına yüklediğin tutar kullanılabilir bakiyene yansır ve siparişlerde doğrudan kullanılır.</p>
-                    </div>
-                    <div className="flex gap-3">
-                      <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-xs font-semibold text-white">2</span>
-                      <p>Bekleyen işlemler kısa süre içinde netleşecek hareketleri ayrı tutarak karışıklığı azaltır.</p>
-                    </div>
-                    <div className="flex gap-3">
-                      <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-xs font-semibold text-white">3</span>
-                      <p>Her sipariş veya yükleme sonrası işlem geçmişini kontrol ederek bakiyendeki değişimi rahatça takip edebilirsin.</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="border-stone-200">
-                <CardContent className="space-y-4 p-6">
-                  <div className="flex items-start gap-3">
-                    <ReceiptText className="mt-0.5 h-5 w-5 text-zinc-700" />
-                    <div>
-                      <h2 className="text-lg font-semibold text-zinc-950">Hızlı işlemler</h2>
-                      <p className="mt-1 text-sm leading-6 text-zinc-600">
-                        İhtiyacın olan sayfalara buradan doğrudan geçebilirsin.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="grid gap-2">
-                    <Link href="/cuzdan/yukle" className="inline-flex items-center justify-center rounded-xl bg-zinc-950 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800">
-                      Yeni bakiye yükle
-                    </Link>
-                    <Link href="/cuzdan/hareketler" className="inline-flex items-center justify-center rounded-xl bg-zinc-100 px-4 py-2 text-sm font-medium text-zinc-900 hover:bg-zinc-200">
-                      Hareket geçmişini aç
-                    </Link>
-                    <Link href="/cuzdan/bekleyen-islemler" className="inline-flex items-center justify-center rounded-xl bg-zinc-100 px-4 py-2 text-sm font-medium text-zinc-900 hover:bg-zinc-200">
-                      Bekleyen işlemleri incele
-                    </Link>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </div>
-        </>
+      {transactionsQuery.isPending ? <LoadingSkeleton /> : null}
+      {transactionsQuery.isError ? (
+        <ErrorState
+          title="Son hareketler yüklenemedi"
+          description={describeApiError(transactionsQuery.error, "Cüzdan hareketleri şu anda getirilemedi.")}
+        />
       ) : null}
+
+      {recentTransactions.length > 0 ? (
+        <section className="rounded-[28px] border border-zinc-100 bg-white p-5 shadow-[0_18px_60px_rgba(15,23,42,0.06)] sm:p-6">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <h2 className="text-xl font-semibold tracking-[-0.04em] text-zinc-900">Son hareketler</h2>
+            <span className="rounded-full bg-zinc-100 px-3 py-1 text-xs font-semibold text-zinc-500">Cüzdan geçmişi</span>
+          </div>
+          <div className="divide-y divide-zinc-100">
+            {recentTransactions.map((tx) => (
+              <div key={tx.id} className="flex items-center justify-between gap-4 py-4 first:pt-0 last:pb-0">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-zinc-900">{getWalletTransactionLabel(tx.transaction_type)}</p>
+                  <p className="mt-1 text-xs text-zinc-500">{formatDateTime(tx.created_at)}</p>
+                </div>
+                <div className="shrink-0 text-sm font-semibold text-zinc-900">
+                  <AmountText amount={tx.amount} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      <CustomerBottomSection />
+
+      {isTopupOpen ? <TopupModal initialAmount={requestedAmount || undefined} onClose={() => setIsTopupOpen(false)} /> : null}
     </PageContainer>
   );
 }

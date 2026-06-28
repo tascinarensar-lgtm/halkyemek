@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from collections import OrderedDict
 
-from django.db.models import Prefetch, Q
+from django.db.models import Count, Prefetch, Q, Sum
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 from rest_framework import generics, serializers
 from rest_framework.permissions import AllowAny
@@ -15,8 +16,10 @@ from businesses.serializers import PublicBusinessSerializer
 from common.pagination import DefaultPagination
 from menus.models import BusinessOffer, MediaAsset, MenuItem, MenuItemMarketplaceCategoryAssignment
 from menus.serializers import (
+    DiscoverySearchResponseSerializer,
     DiscoveryBusinessCardSerializer,
     DiscoveryCategoryListResponseSerializer,
+    DiscoveryHomeMenuItemSerializer,
     DiscoveryHomeResponseSerializer,
     DiscoveryMarketplaceCategorySerializer,
     PublicBusinessDetailResponseSerializer,
@@ -25,6 +28,9 @@ from menus.serializers import (
     PublicCategorySerializer,
     PublicMediaAssetSerializer,
     PublicOfferSerializer,
+    DiscoverySearchCategoryResultSerializer,
+    DiscoverySearchBusinessSerializer,
+    DiscoverySearchMenuItemResultSerializer,
 )
 from common.openapi import ApiErrorEnvelopeSerializer
 from common.responses import error
@@ -34,11 +40,26 @@ from wallets.models import Wallet
 
 
 def _public_business_queryset(*, district: str | None = None):
+    public_quota_filter = Q(
+        menu_items__is_active=True,
+        menu_items__is_visible=True,
+        menu_items__is_available=True,
+        menu_items__category__is_active=True,
+        menu_items__category__is_visible=True,
+        menu_items__quota__is_enabled=True,
+        menu_items__quota__quota_remaining__isnull=False,
+    )
     qs = BusinessProfile.objects.filter(
         is_active=True,
         is_approved=True,
         is_listed=True,
         marketplace_is_visible=True,
+    ).annotate(
+        public_menu_quota_item_count=Count("menu_items", filter=public_quota_filter, distinct=True),
+        public_menu_quota_remaining_total=Coalesce(
+            Sum("menu_items__quota__quota_remaining", filter=public_quota_filter),
+            0,
+        ),
     ).prefetch_related(
         Prefetch(
             "marketplace_categories",
@@ -104,6 +125,7 @@ def _group_business_menu_by_marketplace_category(*, business: BusinessProfile):
             is_visible=True,
             is_available=True,
         )
+        .select_related("quota")
         .prefetch_related(
             Prefetch(
                 "media_assets",
@@ -181,6 +203,16 @@ class DiscoveryCategoryBusinessQuerySerializer(serializers.Serializer):
     featured_first = serializers.BooleanField(required=False, default=True)
 
 
+class DiscoverySearchQuerySerializer(serializers.Serializer):
+    district = serializers.ChoiceField(
+        choices=BusinessProfile.District.choices,
+        required=False,
+        default=BusinessProfile.District.BEYLIKDUZU,
+    )
+    q = serializers.CharField(required=False, allow_blank=True, max_length=120)
+    limit = serializers.IntegerField(required=False, min_value=4, max_value=40, default=20)
+
+
 class PublicBusinessListAPIView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
@@ -227,10 +259,53 @@ class DiscoveryHomeAPIView(APIView):
             is_featured=True,
         ).order_by("-display_priority", "business_name", "id")[:12]
 
-        other_businesses = _public_business_queryset(district=district).filter(
-            Q(listing_type=BusinessProfile.ListingType.VOLUNTEER)
-            | Q(marketplace_categories__marketplace_category__is_other=True, marketplace_categories__is_active=True)
-        ).distinct().order_by("-is_featured", "-display_priority", "business_name", "id")[:12]
+        other_businesses = (
+            _public_business_queryset(district=district)
+            .exclude(
+                listing_type=BusinessProfile.ListingType.CONTRACTED,
+                is_featured=True,
+            )
+            .order_by("-display_priority", "business_name", "id")[:12]
+        )
+
+        menu_item_media = MediaAsset.objects.filter(
+            is_active=True,
+            media_type=MediaAsset.MediaType.IMAGE,
+        ).order_by("sort_order", "id")
+        menu_item_marketplace_categories = MenuItemMarketplaceCategoryAssignment.objects.select_related(
+            "marketplace_category"
+        ).filter(
+            marketplace_category__is_active=True,
+        ).order_by("-is_primary", "sort_order", "id")
+        menu_items = (
+            MenuItem.objects.filter(
+                business__district=district,
+                business__is_active=True,
+                business__is_approved=True,
+                business__is_listed=True,
+                business__marketplace_is_visible=True,
+                category__is_active=True,
+                category__is_visible=True,
+                is_active=True,
+                is_visible=True,
+                is_available=True,
+            )
+            .select_related("business", "category", "quota")
+            .prefetch_related(
+                Prefetch(
+                    "media_assets",
+                    queryset=menu_item_media,
+                    to_attr="prefetched_public_media_assets",
+                ),
+                Prefetch(
+                    "marketplace_category_assignments",
+                    queryset=menu_item_marketplace_categories,
+                    to_attr="prefetched_marketplace_category_assignments",
+                ),
+            )
+            .distinct()
+            .order_by("-business__is_featured", "-business__display_priority", "business__business_name", "sort_order", "id")
+        )[:24]
 
         offers = _live_offer_queryset(district=district)[:12]
 
@@ -248,14 +323,19 @@ class DiscoveryHomeAPIView(APIView):
                 "pending_balance": int(getattr(wallet, "pending_balance", 0) or 0),
             }
 
-            cart = Cart.objects.filter(user=request.user, status=Cart.Status.ACTIVE).select_related("business").first()
+            cart = (
+                Cart.objects.filter(user=request.user, status=Cart.Status.ACTIVE)
+                .select_related("business")
+                .annotate(actual_item_count=Count("cart_items"))
+                .first()
+            )
             if cart is not None:
-                snapshot = cart.snapshot or {}
+                item_count = int(getattr(cart, "actual_item_count", 0) or 0)
                 cart_summary = {
                     "cart_id": cart.id,
                     "business_id": cart.business_id,
                     "business_name": cart.business.business_name,
-                    "item_count": int(snapshot.get("item_count") or 0),
+                    "item_count": item_count,
                     "subtotal_amount": int(cart.subtotal_amount or 0),
                     "customer_fee_amount": int(cart.customer_fee_amount or 0),
                     "total_amount": int(cart.total_amount or 0),
@@ -280,6 +360,7 @@ class DiscoveryHomeAPIView(APIView):
                 "categories": DiscoveryMarketplaceCategorySerializer(categories, many=True).data,
                 "featured_businesses": DiscoveryBusinessCardSerializer(featured_businesses, many=True).data,
                 "other_businesses": DiscoveryBusinessCardSerializer(other_businesses, many=True).data,
+                "menu_items": DiscoveryHomeMenuItemSerializer(menu_items, many=True).data,
                 "active_offers": PublicOfferSerializer(offers, many=True).data,
                 "wallet_summary": wallet_summary,
                 "active_cart_summary": cart_summary,
@@ -315,6 +396,115 @@ class DiscoveryCategoryListAPIView(APIView):
                 "district": district,
                 "count": categories.count(),
                 "results": DiscoveryMarketplaceCategorySerializer(categories, many=True).data,
+            }
+        )
+
+
+class DiscoverySearchAPIView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    @extend_schema(
+        operation_id="discovery_search",
+        parameters=[DiscoverySearchQuerySerializer],
+        responses={200: DiscoverySearchResponseSerializer},
+        tags=["discovery"],
+    )
+    def get(self, request):
+        query_serializer = DiscoverySearchQuerySerializer(data=request.query_params)
+        query_serializer.is_valid(raise_exception=True)
+        district = query_serializer.validated_data["district"]
+        q = (query_serializer.validated_data.get("q") or "").strip()
+        limit = int(query_serializer.validated_data["limit"])
+
+        business_qs = _public_business_queryset(district=district).order_by("-is_featured", "-display_priority", "business_name", "id")
+        category_qs = MarketplaceCategory.objects.filter(district=district, is_active=True).order_by("sort_order", "id")
+        menu_qs = (
+            MenuItem.objects.filter(
+                business__district=district,
+                business__is_active=True,
+                business__is_approved=True,
+                business__is_listed=True,
+                business__marketplace_is_visible=True,
+                is_active=True,
+                is_visible=True,
+                is_available=True,
+            )
+            .select_related("business", "category")
+            .select_related("business", "category", "quota")
+            .prefetch_related(
+                Prefetch(
+                    "media_assets",
+                    queryset=MediaAsset.objects.filter(
+                        is_active=True,
+                        media_type=MediaAsset.MediaType.IMAGE,
+                    ).order_by("sort_order", "id"),
+                    to_attr="prefetched_public_media_assets",
+                )
+            )
+            .order_by("name", "id")
+        )
+
+        matched = False
+        if q:
+            category_qs = category_qs.filter(
+                Q(name__icontains=q) | Q(description__icontains=q) | Q(slug__icontains=q)
+            )
+            business_qs = business_qs.filter(
+                Q(business_name__icontains=q)
+                | Q(short_description__icontains=q)
+                | Q(intro_text__icontains=q)
+                | Q(badge_text__icontains=q)
+            )
+            menu_qs = menu_qs.filter(
+                Q(name__icontains=q)
+                | Q(description__icontains=q)
+                | Q(slug__icontains=q)
+                | Q(category__name__icontains=q)
+                | Q(business__business_name__icontains=q)
+            )
+            matched = category_qs.exists() or business_qs.exists() or menu_qs.exists()
+
+        categories = list(category_qs[:limit])
+        businesses = list(business_qs[:limit])
+        menu_items = list(menu_qs[:limit] if matched or not q else menu_qs[:limit])
+
+        if q and not matched:
+            # Fallback: unknown query should still surface all available menus.
+            menu_items = list(
+                MenuItem.objects.filter(
+                    business__district=district,
+                    business__is_active=True,
+                    business__is_approved=True,
+                    business__is_listed=True,
+                    business__marketplace_is_visible=True,
+                    is_active=True,
+                    is_visible=True,
+                    is_available=True,
+                )
+                .select_related("business", "category")
+                .select_related("business", "category", "quota")
+                .prefetch_related(
+                    Prefetch(
+                        "media_assets",
+                        queryset=MediaAsset.objects.filter(
+                            is_active=True,
+                            media_type=MediaAsset.MediaType.IMAGE,
+                        ).order_by("sort_order", "id"),
+                        to_attr="prefetched_public_media_assets",
+                    )
+                )
+                .order_by("name", "id")[:limit]
+            )
+
+        return Response(
+            {
+                "query": q,
+                "district": district,
+                "matched": matched or not q,
+                "categories": DiscoverySearchCategoryResultSerializer(categories, many=True).data,
+                "businesses": DiscoverySearchBusinessSerializer(businesses, many=True).data,
+                "menu_items": DiscoverySearchMenuItemResultSerializer(menu_items, many=True).data,
             }
         )
 

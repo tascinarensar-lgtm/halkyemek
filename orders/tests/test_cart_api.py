@@ -2,13 +2,14 @@ from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from test_support import create_business, create_category, create_menu_item, create_user
+from test_support import create_business, create_category, create_menu_item, create_user, enable_push_device
 
 
 class CartApiTests(TestCase):
     def setUp(self):
         self.client = APIClient()
         self.user = create_user(username="cart-api-user")
+        enable_push_device(user=self.user)
         self.business = create_business(name="Cart API Biz")
         self.other_business = create_business(name="Other Cart API Biz")
         self.category = create_category(business=self.business, name="Main")
@@ -105,3 +106,48 @@ class CartApiTests(TestCase):
             format="json",
         )
         self.assertEqual(second.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_empty_active_cart_can_switch_business(self):
+        self._auth()
+        first = self.client.post(
+            "/api/v1/cart/items/",
+            {"menu_item_id": self.item.id, "quantity": 1},
+            format="json",
+        )
+        self.assertEqual(first.status_code, status.HTTP_200_OK)
+
+        cleared = self.client.delete("/api/v1/cart/clear/")
+        self.assertEqual(cleared.status_code, status.HTTP_200_OK)
+        self.assertEqual(cleared.data["item_count"], 0)
+
+        second = self.client.post(
+            "/api/v1/cart/items/",
+            {"menu_item_id": self.other_item.id, "quantity": 1},
+            format="json",
+        )
+
+        self.assertEqual(second.status_code, status.HTTP_200_OK)
+        self.assertEqual(second.data["business"], self.other_business.id)
+        self.assertEqual(second.data["item_count"], 1)
+
+    def test_cart_is_isolated_between_users(self):
+        self._auth()
+        first_user_cart = self.client.post(
+            "/api/v1/cart/items/",
+            {"menu_item_id": self.item.id, "quantity": 1},
+            format="json",
+        )
+        self.assertEqual(first_user_cart.status_code, status.HTTP_200_OK)
+
+        other_user = create_user(username="cart-api-other-user")
+        enable_push_device(user=other_user)
+        self.client.force_authenticate(other_user)
+
+        second_user_cart = self.client.post(
+            "/api/v1/cart/items/",
+            {"menu_item_id": self.other_item.id, "quantity": 1},
+            format="json",
+        )
+
+        self.assertEqual(second_user_cart.status_code, status.HTTP_200_OK)
+        self.assertEqual(second_user_cart.data["business"], self.other_business.id)

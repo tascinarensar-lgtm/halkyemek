@@ -9,6 +9,7 @@ import type {
   PublicBusinessDetailResponse,
   PublicBusinessListResponse,
   PublicBusinessMenuResponse,
+  DiscoverySearchResponse,
 } from "@/features/discovery/types";
 import { toQueryString } from "@/features/discovery/params";
 
@@ -45,4 +46,9 @@ export function getPublicBusinessDetail(businessId: number) {
 
 export function getPublicBusinessMenu(businessId: number) {
   return publicApiFetch<PublicBusinessMenuResponse>(`/api/v1/catalog/businesses/${businessId}/menu/`);
+}
+
+export function searchDiscovery(params: { q?: string; district: string; limit?: number }) {
+  const { q = "", district, limit = 20 } = params;
+  return publicApiFetch<DiscoverySearchResponse>(`/api/v1/discovery/search/${toQueryString({ q, district, limit })}`);
 }

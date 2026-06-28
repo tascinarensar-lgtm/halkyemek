@@ -1,5 +1,7 @@
 import { authenticatedApiFetch } from "@/lib/api/authenticated-client";
+import { ApiClientError } from "@/lib/api/errors";
 
+import type { PaginatedResponse } from "@/types/pagination";
 import type { CartDetail, CheckoutSessionDetail, DeviceUpsertResponse, NotificationReadiness } from "@/features/cart/types";
 
 export function getCart() {
@@ -47,6 +49,15 @@ export function createCheckoutSession() {
   });
 }
 
+export function listCheckoutSessions(filters: { status?: string; page?: number; page_size?: number } = {}) {
+  const search = new URLSearchParams();
+  if (filters.status) search.set("status", filters.status);
+  if (filters.page) search.set("page", String(filters.page));
+  if (filters.page_size) search.set("page_size", String(filters.page_size));
+  const query = search.toString();
+  return authenticatedApiFetch<PaginatedResponse<CheckoutSessionDetail>>(`/api/v1/checkout-sessions/${query ? `?${query}` : ""}`);
+}
+
 export function getCheckoutSession(token: string) {
   return authenticatedApiFetch<CheckoutSessionDetail>(`/api/v1/checkout-sessions/${token}/`);
 }
@@ -57,8 +68,15 @@ export function cancelCheckoutSession(token: string) {
   });
 }
 
-export function getLatestCheckoutSession() {
-  return authenticatedApiFetch<CheckoutSessionDetail>("/api/v1/checkout-sessions/latest/");
+export async function getLatestCheckoutSession() {
+  try {
+    return await authenticatedApiFetch<CheckoutSessionDetail>("/api/v1/checkout-sessions/latest/");
+  } catch (error) {
+    if (error instanceof ApiClientError && error.status === 404) {
+      return null;
+    }
+    throw error;
+  }
 }
 
 export function getNotificationReadiness() {

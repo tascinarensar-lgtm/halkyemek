@@ -1,4 +1,4 @@
-from django.core.exceptions import ValidationError
+﻿from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.utils.text import slugify
 
@@ -110,7 +110,8 @@ class MenuItem(models.Model):
     name = models.CharField(max_length=160)
     slug = models.SlugField(max_length=180, blank=True)
     description = models.TextField(blank=True, default="")
-    price_amount = models.PositiveIntegerField()  # kuruş
+    minimum_grams = models.PositiveIntegerField(null=True, blank=True)
+    price_amount = models.PositiveIntegerField()  # kuruÅŸ
     image_url = models.URLField(blank=True, default="")
     sort_order = models.PositiveIntegerField(default=0)
     is_active = models.BooleanField(default=True)
@@ -140,6 +141,9 @@ class MenuItem(models.Model):
 
         if self.price_amount <= 0:
             raise ValidationError({"price_amount": "price_amount must be positive."})
+
+        if self.minimum_grams is not None and self.minimum_grams <= 0:
+            raise ValidationError({"minimum_grams": "minimum_grams must be positive."})
 
         if self.category_id and self.business_id and self.category.business_id != self.business_id:
             raise ValidationError({"category": "Category does not belong to this business."})
@@ -172,6 +176,81 @@ class MenuItem(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class MenuItemQuota(models.Model):
+    menu_item = models.OneToOneField(
+        "menus.MenuItem",
+        on_delete=models.CASCADE,
+        related_name="quota",
+    )
+    is_enabled = models.BooleanField(default=False)
+    quota_total = models.PositiveIntegerField(null=True, blank=True)
+    quota_remaining = models.PositiveIntegerField(null=True, blank=True)
+    quota_reserved = models.PositiveIntegerField(default=0)
+    low_stock_threshold = models.PositiveIntegerField(default=12)
+    updated_by = models.ForeignKey(
+        "accounts.User",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="updated_menu_item_quotas",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["menu_item", "is_enabled"], name="idx_menu_quota_item_enabled"),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(quota_total__gte=0) | models.Q(quota_total__isnull=True),
+                name="ck_menu_quota_total_nonnegative",
+            ),
+            models.CheckConstraint(
+                check=models.Q(quota_remaining__gte=0) | models.Q(quota_remaining__isnull=True),
+                name="ck_menu_quota_remaining_nonnegative",
+            ),
+            models.CheckConstraint(
+                check=models.Q(quota_reserved__gte=0),
+                name="ck_menu_quota_reserved_nonnegative",
+            ),
+            models.CheckConstraint(
+                check=(
+                    models.Q(quota_total__isnull=True)
+                    | models.Q(quota_remaining__isnull=True)
+                    | models.Q(quota_remaining__lte=models.F("quota_total"))
+                ),
+                name="ck_menu_quota_remaining_lte_total",
+            ),
+        ]
+
+    def clean(self):
+        errors: dict[str, str] = {}
+        if self.is_enabled and self.quota_remaining is None:
+            errors["quota_remaining"] = "quota_remaining is required when quota is enabled."
+        if self.quota_total is not None and self.quota_remaining is not None and self.quota_remaining > self.quota_total:
+            errors["quota_remaining"] = "quota_remaining cannot exceed quota_total."
+        if errors:
+            raise ValidationError(errors)
+
+    @property
+    def is_unlimited(self) -> bool:
+        return (not self.is_enabled) or self.quota_remaining is None
+
+    @property
+    def is_sold_out(self) -> bool:
+        return bool(self.is_enabled and self.quota_remaining == 0)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def __str__(self):
+        if self.is_unlimited:
+            return f"{self.menu_item_id} unlimited"
+        return f"{self.menu_item_id} remaining={self.quota_remaining}"
 
 
 class MenuItemMarketplaceCategoryAssignment(models.Model):
@@ -373,7 +452,7 @@ class BusinessOffer(models.Model):
     description = models.TextField(blank=True, default="")
     label = models.CharField(max_length=64, blank=True, default="")
     tag = models.CharField(max_length=64, blank=True, default="")
-    offer_price_amount = models.PositiveIntegerField(help_text="Kuruş cinsinden kampanya fiyatı")
+    offer_price_amount = models.PositiveIntegerField(help_text="KuruÅŸ cinsinden kampanya fiyatÄ±")
     starts_at = models.DateTimeField()
     ends_at = models.DateTimeField()
     is_active = models.BooleanField(default=True)

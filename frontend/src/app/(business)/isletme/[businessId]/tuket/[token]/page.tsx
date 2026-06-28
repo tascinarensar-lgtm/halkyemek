@@ -1,20 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, CheckCircle2, QrCode, Receipt, RefreshCcw, ShieldCheck, Store } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock3, QrCode, Receipt, Store, XCircle } from "lucide-react";
 import { toast } from "sonner";
 
 import { BusinessPanelShell } from "@/components/business/business-panel-shell";
 import { AmountText } from "@/components/ui/amount-text";
+import { Button } from "@/components/ui/Button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ErrorState } from "@/components/ui/error-state";
 import { LoadingSkeleton } from "@/components/ui/loading-skeleton";
 import { PageContainer } from "@/components/ui/page-container";
 import { SectionHeader } from "@/components/ui/section-header";
-import { StatusChip } from "@/components/ui/status-chip";
 import { consumeBusinessCheckoutSession, getBusinessConsumePreview } from "@/features/business-operations/api";
 import { getApiErrorCode, getApiErrorDetails, getApiErrorMessage, getApiRequestId } from "@/lib/api/errors";
 import { formatDateTime } from "@/lib/utils/format";
@@ -31,9 +31,9 @@ function getPreviewErrorTitle(error: unknown) {
 function getFailureCopy(reason: string | null | undefined) {
   switch (reason) {
     case "already_consumed":
-      return "Bu QR daha önce kasada doğrulanmış. Mevcut sipariş kaydını açarak işlemi kontrol edebilirsin.";
+      return "Bu QR daha önce doğrulanmış. Mevcut sipariş kaydını açarak kontrol edebilirsin.";
     case "expired":
-      return "Bu QR oturumunun süresi dolmuş. Müşterinin siparişi yeniden başlatması gerekir.";
+      return "Bu QR oturumunun süresi dolmuş. Müşterinin yeni QR oluşturması gerekir.";
     case "cancelled":
       return "Bu QR oturumu müşteri tarafından iptal edilmiş.";
     case "business_unavailable":
@@ -42,7 +42,7 @@ function getFailureCopy(reason: string | null | undefined) {
     case "insufficient_balance":
       return "Müşteri cüzdanı bu işlemi tamamlayacak durumda görünmüyor.";
     case "empty_snapshot":
-      return "Sipariş içeriği okunamadığı için güvenli teslim onayı kapatıldı.";
+      return "Sipariş içeriği okunamadığı için teslim onayı kapatıldı.";
     case "invalid_status":
       return "Bu QR oturumu mevcut durumu nedeniyle doğrulanamaz.";
     default:
@@ -52,23 +52,45 @@ function getFailureCopy(reason: string | null | undefined) {
 
 function getStatusPresentation(status: string, canConsume: boolean) {
   if (canConsume) {
-    return { label: "Teslime hazır", tone: "success" as const };
+    return {
+      icon: CheckCircle2,
+      label: "Onaya hazır",
+      className: "bg-emerald-50 text-emerald-700 ring-emerald-100",
+      panelClassName: "border-emerald-100 bg-emerald-50/80 text-emerald-800",
+    };
   }
   if (status === "CONSUMED") {
-    return { label: "Teslim onayı verildi", tone: "warning" as const };
+    return {
+      icon: CheckCircle2,
+      label: "Onaylandı",
+      className: "bg-emerald-50 text-emerald-700 ring-emerald-100",
+      panelClassName: "border-emerald-100 bg-emerald-50/80 text-emerald-800",
+    };
   }
   if (status === "EXPIRED" || status === "CANCELLED") {
-    return { label: "Doğrulama kapalı", tone: "danger" as const };
+    return {
+      icon: XCircle,
+      label: "Kapalı",
+      className: "bg-red-50 text-red-700 ring-red-100",
+      panelClassName: "border-red-100 bg-red-50/80 text-red-800",
+    };
   }
-  return { label: "Kontrol gerekiyor", tone: "default" as const };
+  return {
+    icon: AlertTriangle,
+    label: "Kontrol gerekiyor",
+    className: "bg-amber-50 text-amber-700 ring-amber-100",
+    panelClassName: "border-amber-100 bg-amber-50/80 text-amber-800",
+  };
 }
 
 export default function BusinessConsumePage() {
+  const router = useRouter();
   const params = useParams<{ businessId: string; token: string }>();
   const businessId = Number(params.businessId);
   const token = params.token;
   const queryClient = useQueryClient();
   const [postConsumeSyncMessage, setPostConsumeSyncMessage] = useState<string | null>(null);
+  const [showSlowConsumeNotice, setShowSlowConsumeNotice] = useState(false);
 
   const hasValidBusinessId = Number.isFinite(businessId) && businessId > 0;
   const hasValidToken = typeof token === "string" && token.trim().length > 0;
@@ -80,34 +102,53 @@ export default function BusinessConsumePage() {
     retry: false,
   });
 
+  const previewQueryKey = ["business-operations", businessId, "consume-preview", token] as const;
+
   const consumeMutation = useMutation({
-    mutationFn: () => consumeBusinessCheckoutSession(businessId, token),
+    mutationFn: (consumeToken: string) => consumeBusinessCheckoutSession(businessId, consumeToken),
     onMutate: () => {
       setPostConsumeSyncMessage(null);
     },
     onSuccess: async (data) => {
-      toast.success("Teslim onayı verildi. Sipariş başarıyla oluşturuldu.");
-      await Promise.all([
+      queryClient.setQueryData(previewQueryKey, (current: typeof previewQuery.data) =>
+        current
+          ? {
+              ...current,
+              status: data.status,
+              can_consume: false,
+              failure_reason: "already_consumed",
+              existing_order_id: data.order_id,
+            }
+          : current,
+      );
+      queryClient.setQueryData(["business-operations", businessId, "consume-result", token], data);
+      toast.success("Teslim onaylandı.", { description: "Sipariş kaydı oluşturuldu." });
+      void Promise.all([
         queryClient.invalidateQueries({ queryKey: ["business-operations", businessId, "dashboard"] }),
         queryClient.invalidateQueries({ queryKey: ["business-operations", businessId, "consume-history"] }),
-        queryClient.invalidateQueries({ queryKey: ["business-operations", businessId, "consume-preview", token] }),
       ]);
-      queryClient.setQueryData(["business-operations", businessId, "consume-result", token], data);
+      router.replace(`/isletme/${businessId}/siparisler/${data.order_id}`);
     },
     onError: async (error) => {
       const code = getApiErrorCode(error);
 
       if (code === "checkout_session_already_consumed") {
-        await queryClient.invalidateQueries({ queryKey: ["business-operations", businessId, "consume-preview", token] });
-        toast.error("Bu QR daha önce doğrulanmış. Mevcut siparişe yönlenebilirsin.");
+        const details = getApiErrorDetails(error);
+        const orderId = details?.order_id;
+        const normalizedOrderId = typeof orderId === "number" ? orderId : typeof orderId === "string" ? Number(orderId) : null;
+        await queryClient.invalidateQueries({ queryKey: previewQueryKey });
+        toast.error("QR daha önce kullanılmış.", { description: "Mevcut siparişe geçebilirsiniz." });
+        if (normalizedOrderId) {
+          router.replace(`/isletme/${businessId}/siparisler/${normalizedOrderId}`);
+        }
         return;
       }
 
-      if (code === "proxy_network_error" || !(error && typeof error === "object" && "status" in error)) {
+      if (code === "proxy_network_error" || code === "proxy_upstream_timeout" || !(error && typeof error === "object" && "status" in error)) {
         const refreshedPreview = await previewQuery.refetch();
         if (refreshedPreview.data?.existing_order_id) {
           setPostConsumeSyncMessage("İlk istek ağ hatasına düştü; tekrar sorguda mevcut sipariş bulundu. İşlem ikinci kez tetiklenmedi.");
-          toast.error("İlk istek belirsiz kaldı ama mevcut sipariş bulundu.");
+          toast.error("Sipariş bulundu.", { description: "İşlem ikinci kez çalıştırılmadı." });
           return;
         }
         setPostConsumeSyncMessage("Ağ hatası nedeniyle son durum doğrulanamadı. Tekrar denemeden önce bilgiyi yenile.");
@@ -117,6 +158,19 @@ export default function BusinessConsumePage() {
     },
   });
 
+  useEffect(() => {
+    if (!consumeMutation.isPending) {
+      setShowSlowConsumeNotice(false);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setShowSlowConsumeNotice(true);
+    }, 3500);
+
+    return () => window.clearTimeout(timer);
+  }, [consumeMutation.isPending]);
+
   const preview = previewQuery.data;
   const alreadyConsumedOrderId = useMemo(() => {
     const details = getApiErrorDetails(consumeMutation.error);
@@ -124,136 +178,111 @@ export default function BusinessConsumePage() {
     return typeof orderId === "number" ? orderId : typeof orderId === "string" ? Number(orderId) : null;
   }, [consumeMutation.error]);
   const successOrderId = consumeMutation.data?.order_id ?? preview?.existing_order_id ?? alreadyConsumedOrderId ?? null;
-  const canConsume = Boolean(preview?.can_consume) && !consumeMutation.isPending && !previewQuery.isFetching;
+  const consumeToken = preview?.token || token;
+  const canConsume = Boolean(preview?.can_consume && consumeToken) && !consumeMutation.isPending && !previewQuery.isFetching;
 
   const statusPresentation = preview ? getStatusPresentation(preview.status, Boolean(preview.can_consume)) : null;
+  const StatusIcon = statusPresentation?.icon ?? AlertTriangle;
   const statusText = preview
     ? preview.can_consume
-      ? "Teslim onayına bastığında müşterinin ödemesi kesinleşir, sipariş kaydı açılır ve bu işlem geri dönmez."
+      ? "Sipariş doğrulandı. Ürün ve toplam doğruysa Teslimi onayla ile işlemi tamamla."
       : getFailureCopy(preview.failure_reason)
     : "";
   const items = [...(preview?.items ?? [])].sort((left, right) => (left.sort_order ?? 0) - (right.sort_order ?? 0));
+  const businessName = preview ? repairPotentialMojibake(preview.business.name) : "";
+  const currency = preview?.currency || "TRY";
 
   return (
-    <PageContainer>
+    <PageContainer className="bg-white">
       <BusinessPanelShell businessId={hasValidBusinessId ? businessId : null}>
-        <div className="space-y-6">
-          <SectionHeader
-            title="QR doğrulama ve teslim onayı"
-            description="Kasadaki QR veya kısa kasa kodu bu ekrana düşer. Önce sipariş içeriğini kontrol eder, ardından tek tuşla teslim onayı verirsin."
-            actions={
-              <Link href={hasValidBusinessId ? `/isletme/${businessId}/gecmis` : "/isletme"} className="rounded-xl bg-zinc-100 px-4 py-2 text-sm font-medium text-zinc-900 hover:bg-zinc-200">
-                İşlem geçmişine dön
-              </Link>
-            }
-          />
-
-          {!hasValidBusinessId ? <ErrorState title="Geçersiz işletme" description="URL içindeki işletme bilgisi okunamadı. Güvenli işlem için işletme panelinden tekrar aç." /> : null}
-          {hasValidBusinessId && !hasValidToken ? <ErrorState title="Geçersiz doğrulama bağlantısı" description="QR veya bağlantı bilgisi eksik görünüyor. QR kodu yeniden okut veya kasa kodunu tekrar gir." /> : null}
+        <div className="space-y-5 sm:space-y-6">
+          {!hasValidBusinessId ? (
+            <ErrorState title="Geçersiz işletme" description="URL içindeki işletme bilgisi okunamadı. Güvenli işlem için işletme panelinden tekrar aç." />
+          ) : null}
+          {hasValidBusinessId && !hasValidToken ? (
+            <ErrorState title="Geçersiz doğrulama bağlantısı" description="QR veya bağlantı bilgisi eksik görünüyor. QR kodu yeniden okut veya kasa kodunu tekrar gir." />
+          ) : null}
 
           {hasValidBusinessId && hasValidToken && previewQuery.isPending ? <LoadingSkeleton /> : null}
           {hasValidBusinessId && hasValidToken && previewQuery.isError ? (
-            <ErrorState
-              title={getPreviewErrorTitle(previewQuery.error)}
-              description={`${getApiErrorMessage(previewQuery.error)}${getApiRequestId(previewQuery.error) ? ` · request_id: ${getApiRequestId(previewQuery.error)}` : ""}`}
-            />
+            <>
+              <SectionHeader title="Kasa doğrulama" description="QR/kısa kod doğrulama bilgisi şu anda görüntülenemiyor." />
+              <ErrorState
+                title={getPreviewErrorTitle(previewQuery.error)}
+                description={`${getApiErrorMessage(previewQuery.error)}${getApiRequestId(previewQuery.error) ? ` · request_id: ${getApiRequestId(previewQuery.error)}` : ""}`}
+              />
+            </>
           ) : null}
 
           {preview ? (
             <>
-              <div className="grid gap-4 xl:grid-cols-[1.08fr_0.92fr]">
-                <Card className="overflow-hidden border-stone-200 bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.12),_transparent_34%),linear-gradient(135deg,_rgba(255,255,255,0.98),_rgba(250,250,249,0.95))]">
-                  <CardContent className="space-y-5 p-6">
-                    <div className="flex flex-wrap items-start justify-between gap-4">
-                      <div className="space-y-3">
-                        <div className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-medium text-sky-900">
-                          <Store className="h-3.5 w-3.5" /> Kasada doğrulama ekranı
-                        </div>
-                        <div>
-                          <h2 className="text-2xl font-semibold tracking-tight text-zinc-950">
-                            {repairPotentialMojibake(preview.business.name)}
-                          </h2>
-                          <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-600">
-                            Bu ekranda müşterinin seçtiği ürünleri, toplam tahsilatı ve kısa kasa kodunu görürsün. Doğrulamayı sadece sipariş içeriği ve işletme eşleşmesi doğruysa tamamla.
-                          </p>
-                        </div>
-                      </div>
-                      {statusPresentation ? <StatusChip label={statusPresentation.label} tone={statusPresentation.tone} /> : null}
-                    </div>
+              <section className="relative overflow-hidden rounded-[28px] bg-zinc-950 p-5 text-white shadow-[0_24px_70px_rgba(9,9,11,0.18)] sm:rounded-[34px] sm:p-7 lg:p-8">
+                <div className="pointer-events-none absolute -right-20 -top-24 h-56 w-56 rounded-full bg-[#f50555]/30 blur-3xl" />
+                <div className="pointer-events-none absolute -bottom-24 left-8 h-48 w-48 rounded-full bg-rose-300/20 blur-3xl" />
 
-                    <div className="grid gap-3 sm:grid-cols-3">
-                      <div className="rounded-2xl border border-white/80 bg-white/85 p-4 shadow-sm">
-                        <div className="text-xs font-medium uppercase tracking-[0.16em] text-zinc-500">Kısa kasa kodu</div>
-                        <div className="mt-2 text-2xl font-semibold tracking-[0.28em] text-zinc-950">{preview.cashier_code || "-"}</div>
-                      </div>
-                      <div className="rounded-2xl border border-white/80 bg-white/85 p-4 shadow-sm">
-                        <div className="text-xs font-medium uppercase tracking-[0.16em] text-zinc-500">Ürün adedi</div>
-                        <div className="mt-2 text-2xl font-semibold text-zinc-950">{preview.item_count}</div>
-                      </div>
-                      <div className="rounded-2xl border border-white/80 bg-white/85 p-4 shadow-sm">
-                        <div className="text-xs font-medium uppercase tracking-[0.16em] text-zinc-500">Müşteriden alınacak</div>
-                        <div className="mt-2 text-2xl font-semibold text-zinc-950">
-                          <AmountText amount={preview.total_payable_amount} currency={preview.currency || "TRY"} />
-                        </div>
-                      </div>
+                <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+                  <div className="max-w-2xl space-y-4">
+                    <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-rose-100">
+                      <QrCode className="h-3.5 w-3.5" /> Kasa doğrulama
                     </div>
-                  </CardContent>
-                </Card>
+                    <div className="space-y-2">
+                      <h1 className="text-2xl font-semibold tracking-tight sm:text-4xl">Teslimi onayla</h1>
+                      <p className="text-sm leading-6 text-zinc-300 sm:text-base">
+                        {businessName} için sipariş eşleşti. Ürünleri kontrol edip teslimi onayla.
+                      </p>
+                    </div>
+                  </div>
 
-                <Card className="border-stone-200 bg-zinc-950 text-white">
-                  <CardContent className="space-y-4 p-6">
-                    <div className="flex items-center gap-2 text-sm font-medium text-zinc-200">
-                      <ShieldCheck className="h-4 w-4" /> Kasiyer kontrol notu
+                  <div className="grid gap-3 sm:grid-cols-3 lg:min-w-[500px]">
+                    <div className="rounded-2xl border border-white/10 bg-white/10 p-4 backdrop-blur">
+                      <p className="text-xs font-medium uppercase tracking-[0.16em] text-zinc-400">Durum</p>
+                      <p className={`mt-3 inline-flex rounded-full px-3 py-1 text-sm font-semibold ring-1 ${statusPresentation?.className ?? "bg-zinc-100 text-zinc-700 ring-zinc-200"}`}>
+                        {statusPresentation?.label ?? "Kontrol"}
+                      </p>
                     </div>
-                    <div className="rounded-2xl bg-white/5 p-4 text-sm leading-6 text-zinc-200">
-                      Önce ürünleri ve toplam tutarı kontrol et. Teslim onayı verildiğinde müşterinin ödemesi kesinleşir ve sipariş geçmişe kaydolur.
+                    <div className="rounded-2xl border border-white/10 bg-white/10 p-4 backdrop-blur">
+                      <p className="text-xs font-medium uppercase tracking-[0.16em] text-zinc-400">Kasa kodu</p>
+                      <p className="mt-3 break-all text-xl font-semibold tracking-[0.14em] sm:text-2xl sm:tracking-[0.18em]">{preview.cashier_code || "-"}</p>
                     </div>
-                    <div className="space-y-4 text-sm text-zinc-200">
-                      <div className="flex gap-3">
-                        <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/10 text-xs font-semibold">1</span>
-                        <p>QR okutulduysa veya kısa kasa kodu girildiyse işletme ve ürün eşleşmesini bu ekranda kontrol et.</p>
-                      </div>
-                      <div className="flex gap-3">
-                        <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/10 text-xs font-semibold">2</span>
-                        <p>Müşterinin sipariş toplamı doğruysa tek tuşla teslim onayı ver.</p>
-                      </div>
-                      <div className="flex gap-3">
-                        <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/10 text-xs font-semibold">3</span>
-                        <p>Onaydan sonra detay sayfası açılır; net tutar ve satır bazlı ürünleri orada da inceleyebilirsin.</p>
-                      </div>
+                    <div className="rounded-2xl border border-white/10 bg-white/10 p-4 backdrop-blur">
+                      <p className="text-xs font-medium uppercase tracking-[0.16em] text-zinc-400">Toplam</p>
+                      <p className="mt-3 text-xl font-semibold tracking-tight sm:text-2xl">
+                        <AmountText amount={preview.total_payable_amount} currency={currency} />
+                      </p>
                     </div>
-                  </CardContent>
-                </Card>
-              </div>
+                  </div>
+                </div>
+              </section>
 
-              <div className="grid gap-6 lg:grid-cols-[1.08fr_0.92fr]">
-                <Card className="border-stone-200">
-                  <CardContent className="space-y-5 p-6">
-                    <div className="flex items-start gap-3">
-                      <Receipt className="mt-0.5 h-5 w-5 text-zinc-700" />
+              <div className="grid gap-5 lg:grid-cols-[1.05fr_0.95fr]">
+                <Card className="border-zinc-100 bg-white shadow-[0_18px_50px_rgba(24,24,27,0.08)]">
+                  <CardContent className="space-y-5 p-5 sm:p-6">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div>
-                        <h2 className="text-lg font-semibold text-zinc-950">Sipariş içeriği</h2>
-                        <p className="mt-1 text-sm leading-6 text-zinc-600">
-                          Teslim onayından önce kasada hangi ürünlerin verileceğini ve müşteriden tahsil edilecek toplamı burada kontrol edebilirsin.
-                        </p>
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#f50555]">Sipariş içeriği</p>
+                        <h2 className="mt-2 text-xl font-semibold tracking-tight text-zinc-950 sm:text-2xl">Verilecek ürünler</h2>
+                        <p className="mt-2 text-sm leading-6 text-zinc-600">Onaydan önce ürünleri ve adetleri kontrol et.</p>
+                      </div>
+                      <div className="inline-flex items-center gap-2 rounded-full bg-zinc-100 px-3 py-1.5 text-sm font-medium text-zinc-700">
+                        <Receipt className="h-4 w-4" /> {preview.item_count} ürün
                       </div>
                     </div>
 
                     {items.length ? (
                       <div className="space-y-3">
                         {items.map((item, index) => (
-                          <div key={`${item.menu_item_id}-${index}`} className="rounded-2xl bg-zinc-50 p-4">
+                          <div key={`${item.menu_item_id}-${index}`} className="rounded-[22px] border border-zinc-100 bg-zinc-50/80 p-4">
                             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                               <div>
-                                <p className="font-medium text-zinc-950">
+                                <p className="font-semibold text-zinc-950">
                                   {repairPotentialMojibake(item.menu_item_name || item.name || `Ürün ${item.menu_item_id}`)}
                                 </p>
                                 <p className="mt-1 text-sm text-zinc-500">
-                                  {item.quantity} adet · Birim fiyat <AmountText amount={item.unit_price_amount} currency={preview.currency || "TRY"} />
+                                  {item.quantity} adet · Birim <AmountText amount={item.unit_price_amount} currency={currency} />
                                 </p>
                               </div>
-                              <div className="text-sm font-medium text-zinc-900">
-                                <AmountText amount={item.line_total_amount} currency={preview.currency || "TRY"} />
+                              <div className="text-sm font-semibold text-zinc-900">
+                                <AmountText amount={item.line_total_amount} currency={currency} />
                               </div>
                             </div>
                           </div>
@@ -263,79 +292,92 @@ export default function BusinessConsumePage() {
                       <ErrorState title="Sipariş satırları görüntülenemiyor" description="Ürün kalemleri şu anda okunamadı. Doğrulamayı tamamlamadan önce bilgiyi yenilemeyi dene." />
                     )}
 
-                    <div className="grid gap-3 text-sm text-zinc-700">
-                      <div className="flex items-center justify-between rounded-2xl bg-zinc-50 px-4 py-3">
-                        <span>Menülerin toplamı</span>
-                        <AmountText amount={preview.subtotal_amount ?? preview.total_payable_amount} currency={preview.currency || "TRY"} />
-                      </div>
-                      <div className="flex items-center justify-between rounded-2xl bg-zinc-50 px-4 py-3">
-                        <span>Müşteri hizmet payı</span>
-                        <AmountText amount={preview.customer_fee_amount ?? 0} currency={preview.currency || "TRY"} />
-                      </div>
-                      <div className="flex items-center justify-between rounded-2xl bg-zinc-950 px-4 py-4 text-base font-semibold text-white">
-                        <span>Kasada tahsil edilecek toplam</span>
-                        <AmountText amount={preview.total_payable_amount} currency={preview.currency || "TRY"} />
+                    <div className="rounded-[26px] bg-[#f50555] p-5 text-white shadow-[0_18px_45px_rgba(245,5,85,0.22)]">
+                      <div className="flex items-center justify-between gap-4">
+                        <span className="text-sm font-medium text-white/75">Toplam</span>
+                        <span className="text-2xl font-semibold tracking-tight sm:text-3xl">
+                          <AmountText amount={preview.total_payable_amount} currency={currency} />
+                        </span>
                       </div>
                     </div>
                   </CardContent>
                 </Card>
 
-                <Card className="border-stone-200">
-                  <CardContent className="space-y-5 p-6">
-                    <div className="flex items-start gap-3">
-                      <QrCode className="mt-0.5 h-5 w-5 text-zinc-700" />
-                      <div>
-                        <h2 className="text-lg font-semibold text-zinc-950">Teslim onayı</h2>
-                        <p className="mt-1 text-sm leading-6 text-zinc-600">
-                          Bu bölümde QR oturumunun son durumunu görür, gerekirse bilgiyi yeniler ve doğrulamayı güvenle tamamlarsın.
+                <Card className="overflow-hidden border-zinc-100 bg-zinc-950 text-white shadow-[0_18px_55px_rgba(9,9,11,0.13)]">
+                  <CardContent className="space-y-5 p-5 sm:p-6">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2 text-sm font-medium text-zinc-200">
+                        <span className="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-[#f50555]/15 text-[#ff7a9f]">
+                          <Store className="h-4 w-4" />
+                        </span>
+                        Onay paneli
+                      </div>
+                      <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-zinc-300">#{preview.checkout_session_id}</span>
+                    </div>
+
+                    <div className={`rounded-[26px] border p-5 text-sm leading-6 ${statusPresentation?.panelClassName ?? "border-white/10 bg-white/5 text-zinc-200"}`}>
+                      <div className="mb-2 flex items-center gap-2 font-semibold">
+                        <StatusIcon className="h-4 w-4" /> {statusPresentation?.label ?? "Kontrol gerekiyor"}
+                      </div>
+                      {statusText}
+                    </div>
+
+                    <div className="rounded-[26px] border border-white/10 bg-white/5 p-4">
+                      <p className="text-xs font-medium uppercase tracking-[0.18em] text-zinc-400">Kasa kodu</p>
+                      <p className="mt-2 break-all text-2xl font-semibold tracking-[0.14em] text-white sm:text-3xl sm:tracking-[0.18em]">{preview.cashier_code || "-"}</p>
+                      <p className="mt-3 text-sm leading-6 text-zinc-400">Müşterideki kod ile aynıysa işlem doğru QR oturumuna aittir.</p>
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-[22px] bg-white/5 p-4">
+                        <div className="flex items-center gap-2 text-sm font-semibold text-white">
+                          <Clock3 className="h-4 w-4 text-[#ff7a9f]" /> Geçerlilik
+                        </div>
+                        <p className="mt-2 text-sm leading-6 text-zinc-400">{formatDateTime(preview.expires_at)}</p>
+                      </div>
+                      <div className="rounded-[22px] bg-white/5 p-4">
+                        <div className="text-sm font-semibold text-white">Tahsilat</div>
+                        <p className="mt-2 text-sm leading-6 text-zinc-400">
+                          <AmountText amount={preview.total_payable_amount} currency={currency} />
                         </p>
                       </div>
                     </div>
 
-                    <div className={`rounded-2xl p-4 text-sm leading-6 ${preview.can_consume ? "bg-emerald-50 text-emerald-800" : preview.status === "EXPIRED" || preview.status === "CANCELLED" ? "bg-red-50 text-red-800" : "bg-amber-50 text-amber-800"}`}>
-                      {statusText}
-                    </div>
-
-                    <div className="space-y-3 text-sm text-zinc-700">
-                      <div className="flex items-center justify-between rounded-2xl bg-zinc-50 px-4 py-3">
-                        <span>QR oturum numarası</span>
-                        <span className="font-medium text-zinc-950">#{preview.checkout_session_id}</span>
+                    {consumeMutation.isPending ? (
+                      <div className="rounded-[22px] border border-white/10 bg-white/5 p-4 text-sm leading-6 text-zinc-300">
+                        <p className="font-semibold text-white">Teslim onayı işleniyor</p>
+                        <p className="mt-1">
+                          Cüzdan düşümü ve sipariş kaydı güvenli şekilde tamamlanıyor. Lütfen bu işlem bitene kadar sayfayı kapatma.
+                        </p>
+                        {showSlowConsumeNotice ? (
+                          <p className="mt-2 text-zinc-400">
+                            Yanıt normalden uzun sürüyor. Sistem işlemi ikinci kez tetiklemeden sonucu bekliyor; gerekirse son durumu otomatik kontrol edeceğiz.
+                          </p>
+                        ) : null}
                       </div>
-                      <div className="flex items-center justify-between rounded-2xl bg-zinc-50 px-4 py-3">
-                        <span>Son geçerlilik</span>
-                        <span className="font-medium text-zinc-950">{formatDateTime(preview.expires_at)}</span>
-                      </div>
-                      <div className="flex items-center justify-between rounded-2xl bg-zinc-50 px-4 py-3">
-                        <span>İşletmeye yansıyacak net</span>
-                        <AmountText amount={preview.business_net_amount ?? 0} currency={preview.currency || "TRY"} />
-                      </div>
-                      <div className="flex items-center justify-between rounded-2xl bg-zinc-50 px-4 py-3">
-                        <span>Platform kesintisi</span>
-                        <AmountText amount={preview.business_fee_amount ?? 0} currency={preview.currency || "TRY"} />
-                      </div>
-                    </div>
+                    ) : null}
 
                     {postConsumeSyncMessage ? (
-                      <div className="rounded-2xl bg-zinc-50 p-4 text-sm leading-6 text-zinc-700">{postConsumeSyncMessage}</div>
+                      <div className="rounded-[22px] bg-white/5 p-4 text-sm leading-6 text-zinc-300">{postConsumeSyncMessage}</div>
                     ) : null}
 
                     {successOrderId ? (
-                      <div className="rounded-2xl bg-emerald-50 p-4 text-sm text-emerald-800">
+                      <div className="rounded-[24px] bg-emerald-50 p-4 text-sm text-emerald-800">
                         <div className="flex items-start gap-3">
                           <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
                           <div>
-                            <p className="font-medium">Teslim onayı tamamlandı</p>
-                            <p className="mt-1">Sipariş kaydı hazır. İstersen ayrıntı sayfasında kalemleri ve tutar kırılımını açabilirsin.</p>
+                            <p className="font-semibold">Teslim onayı tamamlandı</p>
+                            <p className="mt-1 leading-6">Sipariş kaydı hazır. Detay sayfasından kalemleri ve tutarı inceleyebilirsin.</p>
                           </div>
                         </div>
-                        <Link href={`/isletme/${businessId}/siparisler/${successOrderId}`} className="mt-4 inline-flex rounded-xl bg-emerald-700 px-4 py-2 font-medium text-white hover:bg-emerald-800">
+                        <Link href={`/isletme/${businessId}/siparisler/${successOrderId}`} className="mt-4 inline-flex rounded-2xl bg-emerald-700 px-4 py-2 font-semibold text-white hover:bg-emerald-800">
                           Sipariş detayını aç
                         </Link>
                       </div>
                     ) : null}
 
                     {preview.existing_order_id && !successOrderId ? (
-                      <div className="rounded-2xl bg-zinc-50 p-4 text-sm leading-6 text-zinc-700">
+                      <div className="rounded-[22px] bg-white/5 p-4 text-sm leading-6 text-zinc-300">
                         Bu QR için daha önce oluşturulmuş sipariş bulundu: #{preview.existing_order_id}
                       </div>
                     ) : null}
@@ -347,32 +389,30 @@ export default function BusinessConsumePage() {
                       />
                     ) : null}
 
-                    <div className="flex flex-wrap gap-3">
+                    <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
                       <button
                         type="button"
-                        onClick={() => consumeMutation.mutate()}
+                        onClick={() => consumeMutation.mutate(consumeToken)}
                         disabled={!canConsume}
-                        className="inline-flex items-center justify-center rounded-xl bg-zinc-950 px-5 py-3 text-sm font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
+                        aria-busy={consumeMutation.isPending}
+                        className="inline-flex items-center justify-center rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-zinc-950 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:bg-white/20 disabled:text-white/40"
                       >
-                        {consumeMutation.isPending ? "Teslim onayı veriliyor..." : "Teslim onayını ver"}
+                        {consumeMutation.isPending ? "Teslim onayı işleniyor..." : "Teslimi onayla"}
                       </button>
-                      <button
+                      <Button
                         type="button"
+                        variant="secondary"
                         onClick={() => previewQuery.refetch()}
                         disabled={previewQuery.isFetching || consumeMutation.isPending}
-                        className="inline-flex items-center justify-center gap-2 rounded-xl bg-zinc-100 px-5 py-3 text-sm font-semibold text-zinc-900 hover:bg-zinc-200 disabled:text-zinc-400"
                       >
-                        <RefreshCcw className="h-4 w-4" />
-                        Bilgiyi yenile
-                      </button>
+                        Yenile
+                      </Button>
                     </div>
 
-                    <div className="rounded-2xl bg-amber-50 p-4 text-sm leading-6 text-amber-900">
+                    <div className="rounded-[22px] border border-amber-200/70 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
                       <div className="flex items-start gap-3">
                         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                        <p>
-                          Teslim onayına bastığında müşterinin ödemesi bu ekranda tamamlanır. Yanlış müşteride veya yanlış işletmede işlem yapmamak için kısa kasa kodu, ürün listesi ve toplam tutarı her zaman son kez kontrol et.
-                        </p>
+                        <p>Kamera veya kasa kodu işletme panelinde siparişi otomatik tamamlar. Bu sayfa, bağlantıyla açılan siparişlerde son manuel kontrol için kullanılabilir.</p>
                       </div>
                     </div>
                   </CardContent>

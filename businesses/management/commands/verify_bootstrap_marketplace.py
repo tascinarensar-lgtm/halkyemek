@@ -56,7 +56,8 @@ class Command(BaseCommand):
             if category_state != expected_state:
                 mismatched.append(slug)
 
-        other_count = queryset.filter(is_other=True, is_active=True).count()
+        active_slugs = list(queryset.filter(is_active=True).values_list("slug", flat=True))
+        expected_slugs = [item.slug for item in expected_items]
         home_visible = DiscoveryMarketplaceCategorySerializer(
             queryset.filter(is_active=True), many=True
         ).data
@@ -70,9 +71,9 @@ class Command(BaseCommand):
             problems.append(f"mismatched={','.join(mismatched)}")
         if duplicate_slugs:
             problems.append(f"duplicate_slugs={','.join(sorted(set(duplicate_slugs)))}")
-        if other_count != 1:
-            problems.append(f"active_other_count={other_count}")
-        if len(home_visible) < len(expected_items):
+        if active_slugs != expected_slugs:
+            problems.append(f"active_slugs={','.join(active_slugs)}")
+        if len(home_visible) != len(expected_items):
             problems.append(f"home_visible_categories={len(home_visible)}")
 
         if problems:

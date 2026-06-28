@@ -88,10 +88,6 @@ def send_fcm_message(*, token: str, title: str, body: str, data: dict[str, str] 
     payload = {
         "message": {
             "token": token,
-            "notification": {
-                "title": title,
-                "body": body,
-            },
             "data": payload_data,
             "android": {"priority": "high"},
             "apns": {

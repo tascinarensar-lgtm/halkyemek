@@ -2,7 +2,10 @@ import json
 import hashlib
 
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db.models import Q
+from django.utils import timezone
 from common.openapi import ApiErrorEnvelopeSerializer, CHECKOUT_CREATE_SUCCESS_EXAMPLE, STANDARD_ERROR_EXAMPLE
+from common.pagination import DefaultPagination
 from common.responses import error
 from common.throttles import CheckoutSessionConsumeThrottle, CheckoutSessionCreateThrottle
 from idempotency.drf import require_idempotency_key
@@ -17,7 +20,7 @@ from drf_spectacular.utils import extend_schema
 
 from businesses.models import BusinessProfile
 from logs.services import create_audit_log
-from notifications.permissions import HasActivePushDevice
+from orders.models import CheckoutSession
 from orders.services_cart import ActiveCartNotFound, CartError, CartService
 from orders.serializers_checkout import (
     CheckoutConsumeResponseSerializer,
@@ -41,9 +44,11 @@ from orders.services_checkout import (
     cancel_checkout_session,
     consume_checkout_session,
     create_checkout_session,
+    _expire_if_needed,
     get_checkout_session_by_token,
     get_latest_reusable_checkout_session,
 )
+from orders.services_quota import MenuItemQuotaError
 
 
 def _serialize_consume_preview(preview: CheckoutSessionAccessResult) -> dict:
@@ -87,6 +92,8 @@ def _raise_checkout_api_error(exc: Exception, *, request=None):
         return _error_response(code="checkout_session_forbidden", message=str(exc), status_code=status.HTTP_403_FORBIDDEN)
     if isinstance(exc, (CheckoutSessionInvalidMenuItem, CheckoutSessionInsufficientBalance, CheckoutSessionCancelled)):
         return _error_response(code="checkout_session_invalid", message=str(exc), status_code=status.HTTP_400_BAD_REQUEST)
+    if isinstance(exc, MenuItemQuotaError):
+        return _error_response(code=exc.code, message=str(exc), status_code=status.HTTP_409_CONFLICT)
     if isinstance(exc, CheckoutSessionExpired):
         return _error_response(code="checkout_session_expired", message=str(exc), status_code=status.HTTP_410_GONE)
     if isinstance(exc, CheckoutSessionAlreadyConsumed):
@@ -98,9 +105,44 @@ def _raise_checkout_api_error(exc: Exception, *, request=None):
 
 
 class CheckoutSessionCreateAPIView(APIView):
-    permission_classes = [IsAuthenticated, HasActivePushDevice]
+    permission_classes = [IsAuthenticated]
     throttle_classes = [CheckoutSessionCreateThrottle]
     IDEMPOTENCY_SCOPE = "orders.checkout_session_create"
+
+    @extend_schema(operation_id="checkout_session_list", responses={200: CheckoutSessionDetailSerializer(many=True), 403: ApiErrorEnvelopeSerializer}, tags=["checkout"], examples=[STANDARD_ERROR_EXAMPLE])
+    def get(self, request):
+        status_filter = str(request.query_params.get("status") or "all").strip().lower()
+        queryset = (
+            CheckoutSession.objects.filter(user=request.user)
+            .select_related("business", "cart")
+            .order_by("-created_at")
+        )
+
+        if status_filter == "active":
+            queryset = queryset.filter(
+                status__in=[CheckoutSession.Status.PENDING, CheckoutSession.Status.CONFIRMED],
+                expires_at__gt=timezone.now(),
+            )
+        elif status_filter == "expired":
+            queryset = queryset.filter(
+                Q(status=CheckoutSession.Status.EXPIRED)
+                | Q(status__in=[CheckoutSession.Status.PENDING, CheckoutSession.Status.CONFIRMED], expires_at__lte=timezone.now())
+            )
+        elif status_filter in {"pending", "confirmed", "consumed", "expired", "cancelled"}:
+            queryset = queryset.filter(status=status_filter.upper())
+        elif status_filter != "all":
+            return error(
+                "checkout_session_filter_invalid",
+                "Unsupported checkout session status filter.",
+                status=status.HTTP_400_BAD_REQUEST,
+                request=request,
+                details={"status": status_filter},
+            )
+
+        paginator = DefaultPagination()
+        page = paginator.paginate_queryset(queryset, request, view=self)
+        sessions = [_expire_if_needed(session) for session in (page or [])]
+        return paginator.get_paginated_response(CheckoutSessionDetailSerializer(sessions, many=True).data)
 
     @staticmethod
     def _fingerprint(*, user_id: int, cart_result) -> str:
@@ -127,7 +169,14 @@ class CheckoutSessionCreateAPIView(APIView):
         }
         return hashlib.sha256(json.dumps(material, sort_keys=True).encode("utf-8")).hexdigest()
 
+    def get_throttles(self):
+        if self.request.method != "POST":
+            return []
+        return super().get_throttles()
+
     def check_throttles(self, request):
+        if request.method != "POST":
+            return super().check_throttles(request)
         if not request.user or not request.user.is_authenticated:
             return super().check_throttles(request)
         idempotency_key = require_idempotency_key(request)
@@ -274,7 +323,7 @@ class CheckoutSessionCreateAPIView(APIView):
 
 
 class CheckoutSessionDetailAPIView(APIView):
-    permission_classes = [IsAuthenticated, HasActivePushDevice]
+    permission_classes = [IsAuthenticated]
 
     @extend_schema(operation_id="checkout_session_detail", responses={200: CheckoutSessionDetailSerializer, 403: ApiErrorEnvelopeSerializer, 404: ApiErrorEnvelopeSerializer, 410: ApiErrorEnvelopeSerializer}, tags=["checkout"], examples=[STANDARD_ERROR_EXAMPLE])
     def get(self, request, token: str):

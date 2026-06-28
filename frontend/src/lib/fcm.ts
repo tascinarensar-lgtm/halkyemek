@@ -46,10 +46,10 @@ function getRuntimeState() {
   } else if (userAgent.includes("gsa/")) {
     hostAppLabel = "Google";
   } else if (userAgent.includes("; wv")) {
-    hostAppLabel = "uygulama ici tarayici";
+    hostAppLabel = "uygulama içi tarayıcı";
   }
 
-  let browserLabel = "Tarayici";
+  let browserLabel = "Tarayıcı";
   if (userAgent.includes("edg/")) {
     browserLabel = "Edge";
   } else if (userAgent.includes("crios") || userAgent.includes("chrome")) {
@@ -96,7 +96,7 @@ function getRuntimeState() {
 
 function ensureBrowserEnvironment() {
   if (typeof window === "undefined") {
-    throw new Error("Bildirim ayarlari yalnizca tarayicida hazirlanabilir.");
+    throw new Error("Bildirim ayarları yalnızca tarayıcıda hazırlanabilir.");
   }
 }
 
@@ -153,19 +153,19 @@ async function ensureMessagingSupported() {
   const runtime = getRuntimeState();
 
   if (!window.isSecureContext) {
-    throw new Error("Bildirimler yalnizca guvenli baglantida calisir. Siteyi HTTPS uzerinden veya localhost altinda acin.");
+    throw new Error("Bildirimler yalnızca güvenli bağlantıda çalışır. Siteyi HTTPS üzerinden veya localhost altında aç.");
   }
 
   if (runtime.environment === "in_app_browser") {
-    throw new Error(`Bu sayfa ${runtime.hostAppLabel || "uygulama ici tarayici"} icinde acildi. Canli bildirim icin baglantiyi ${runtime.recommendedBrowserLabel || "desteklenen tarayici"} ile acip tekrar deneyin.`);
+    throw new Error(`Bu sayfa ${runtime.hostAppLabel || "uygulama içi tarayıcı"} içinde açıldı. Canlı bildirim için bağlantıyı ${runtime.recommendedBrowserLabel || "desteklenen tarayıcı"} ile açıp tekrar dene.`);
   }
 
   if (runtime.environment === "ios_home_screen_required") {
-    throw new Error("iPhone ve iPad cihazlarda canli bildirim icin HalkYemek'i Safari'de acip Ana Ekrana Ekle adimini tamamlamaniz gerekir.");
+    throw new Error("iPhone ve iPad cihazlarda canlı bildirim için HalkYemek'i Safari'de açıp Ana Ekrana Ekle adımını tamamlaman gerekir.");
   }
 
   if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) {
-    throw new Error("Bu tarayici canli web bildirimi destegi sunmuyor.");
+    throw new Error("Bu tarayıcı canlı web bildirimi desteği sunmuyor.");
   }
 
   if (!supportPromise) {
@@ -174,7 +174,7 @@ async function ensureMessagingSupported() {
 
   const supported = await supportPromise;
   if (!supported) {
-    throw new Error("Bu tarayicida Firebase web push kullanilamiyor.");
+    throw new Error("Bu tarayıcıda Firebase web push kullanılamıyor.");
   }
 }
 
@@ -182,7 +182,7 @@ async function ensureNotificationPermission(requestPermission: boolean) {
   ensureBrowserEnvironment();
 
   if (!("Notification" in window)) {
-    throw new Error("Bu tarayici bildirim izni yonetimini desteklemiyor.");
+    throw new Error("Bu tarayıcı bildirim izni yönetimini desteklemiyor.");
   }
 
   if (window.Notification.permission === "default" && requestPermission) {
@@ -269,7 +269,7 @@ export async function buildNotificationDeviceInput(options?: { requestPermission
       if (allowNoop) {
         return null;
       }
-      throw new Error("Tarayici bildirim izni kapali. Tarayici ayarlarindan izni actiktan sonra tekrar deneyin.");
+      throw new Error("Tarayıcı bildirim izni kapalı. Tarayıcı ayarlarından izni açtıktan sonra tekrar dene.");
     }
 
     return {
@@ -295,7 +295,7 @@ export async function buildNotificationDeviceInput(options?: { requestPermission
   });
 
   if (!token) {
-    throw new Error("Bu cihaz icin FCM token alinamadi. Tarayici iznini ve service worker kaydini kontrol edin.");
+    throw new Error("Bu cihaz için FCM token alınamadı. Tarayıcı iznini ve service worker kaydını kontrol et.");
   }
 
   setStoredFcmToken(token);
@@ -323,6 +323,25 @@ export async function startForegroundMessageListener(onForegroundMessage: (paylo
   await ensureMessagingSupported();
   const messaging = getMessaging(getFirebaseClientApp());
   return onMessage(messaging, onForegroundMessage);
+}
+
+export async function showBrowserTestNotification() {
+  const permission = await ensureNotificationPermission(true);
+  if (permission === "denied") {
+    throw new Error("Tarayıcı bu site için bildirimleri engellemiş. Adres çubuğundaki site ayarlarından bildirim iznini açıp tekrar dene.");
+  }
+  if (permission !== "granted") {
+    throw new Error("Bildirim izni verilmedi. Bu cihazda test bildirimi göstermek için tarayıcı iznini onayla.");
+  }
+
+  const registration = await ensurePushServiceWorkerRegistration();
+  await registration.showNotification("HalkYemek test bildirimi", {
+    body: "Bu bildirimi PC ekranında görüyorsan cihaz bildirimleri çalışıyor.",
+    icon: "/logo-halkyemek.png",
+    badge: "/hy-favicon.svg",
+    tag: `halkyemek-local-test-${Date.now()}`,
+    data: { url: "/bildirimler" },
+  });
 }
 
 export function clearStoredNotificationToken() {

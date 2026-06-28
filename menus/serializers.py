@@ -15,9 +15,11 @@ from menus.models import (
     Category,
     MediaAsset,
     MenuItem,
+    MenuItemQuota,
     MenuItemMarketplaceCategoryAssignment,
     get_or_create_internal_menu_category,
 )
+from orders.services_quota import build_menu_item_quota_state
 from menus.media_storage import (
     build_media_public_url,
     delete_stored_media_file_if_unused,
@@ -44,6 +46,11 @@ class PublicMenuItemSerializer(serializers.ModelSerializer):
     category_id = serializers.IntegerField(read_only=True)
     image = serializers.SerializerMethodField()
     marketplace_categories = serializers.SerializerMethodField()
+    quota_enabled = serializers.SerializerMethodField()
+    quota_remaining = serializers.SerializerMethodField()
+    quota_label = serializers.SerializerMethodField()
+    is_sold_out = serializers.SerializerMethodField()
+    can_add_to_cart = serializers.SerializerMethodField()
 
     class Meta:
         model = MenuItem
@@ -53,10 +60,16 @@ class PublicMenuItemSerializer(serializers.ModelSerializer):
             "name",
             "slug",
             "description",
+            "minimum_grams",
             "price_amount",
             "image_url",
             "image",
             "is_available",
+            "quota_enabled",
+            "quota_remaining",
+            "quota_label",
+            "is_sold_out",
+            "can_add_to_cart",
             "marketplace_categories",
         ]
 
@@ -91,6 +104,24 @@ class PublicMenuItemSerializer(serializers.ModelSerializer):
             }
             for assignment in assignments
         ]
+
+    def _quota_state(self, obj):
+        return build_menu_item_quota_state(obj)
+
+    def get_quota_enabled(self, obj) -> bool:
+        return self._quota_state(obj).enabled
+
+    def get_quota_remaining(self, obj) -> int | None:
+        return self._quota_state(obj).remaining
+
+    def get_quota_label(self, obj) -> str | None:
+        return self._quota_state(obj).label
+
+    def get_is_sold_out(self, obj) -> bool:
+        return self._quota_state(obj).is_sold_out
+
+    def get_can_add_to_cart(self, obj) -> bool:
+        return self._quota_state(obj).can_add_to_cart
 
 
 class PublicMediaAssetSerializer(serializers.ModelSerializer):
@@ -217,11 +248,61 @@ class DiscoveryNotificationReadinessSerializer(serializers.Serializer):
     active_device_count = serializers.IntegerField()
 
 
+class DiscoveryHomeMenuItemSerializer(PublicMenuItemSerializer):
+    business_id = serializers.IntegerField(source="business.id", read_only=True)
+    business_name = serializers.CharField(source="business.business_name", read_only=True)
+    business_is_featured = serializers.BooleanField(source="business.is_featured", read_only=True)
+    category_name = serializers.CharField(source="category.name", read_only=True)
+    marketplace_category_name = serializers.SerializerMethodField()
+
+    class Meta(PublicMenuItemSerializer.Meta):
+        fields = [
+            "id",
+            "business_id",
+            "business_name",
+            "business_is_featured",
+            "category_id",
+            "category_name",
+            "marketplace_category_name",
+            "name",
+            "slug",
+            "description",
+            "minimum_grams",
+            "price_amount",
+            "image_url",
+            "image",
+            "is_available",
+            "quota_enabled",
+            "quota_remaining",
+            "quota_label",
+            "is_sold_out",
+            "can_add_to_cart",
+            "marketplace_categories",
+        ]
+
+    def get_marketplace_category_name(self, obj: MenuItem) -> str:
+        assignments = getattr(obj, "prefetched_marketplace_category_assignments", None)
+        if assignments is None:
+            assignments = list(
+                obj.marketplace_category_assignments.select_related("marketplace_category").order_by(
+                    "-is_primary",
+                    "sort_order",
+                    "id",
+                )
+            )
+        primary_assignment = next((assignment for assignment in assignments if assignment.is_primary), None)
+        selected_assignment = primary_assignment or (assignments[0] if assignments else None)
+        if selected_assignment is not None:
+            return selected_assignment.marketplace_category.name
+        return obj.category.name
+
+
 class DiscoveryHomeResponseSerializer(serializers.Serializer):
     district = DistrictSummarySerializer()
     categories = DiscoveryMarketplaceCategorySerializer(many=True)
     featured_businesses = DiscoveryBusinessCardSerializer(many=True)
     other_businesses = DiscoveryBusinessCardSerializer(many=True)
+    menu_items = DiscoveryHomeMenuItemSerializer(many=True)
     active_offers = PublicOfferSerializer(many=True)
     wallet_summary = DiscoveryWalletSummarySerializer(required=False, allow_null=True)
     active_cart_summary = DiscoveryActiveCartSummarySerializer(required=False, allow_null=True)
@@ -257,6 +338,88 @@ class PublicBusinessMenuResponseSerializer(serializers.Serializer):
     business = PublicBusinessSerializer()
     categories = PublicCategorySerializer(many=True)
     active_offers = PublicOfferSerializer(many=True)
+
+
+class DiscoverySearchBusinessSerializer(PublicBusinessSerializer):
+    class Meta(PublicBusinessSerializer.Meta):
+        fields = PublicBusinessSerializer.Meta.fields
+
+
+class DiscoverySearchMenuItemResultSerializer(serializers.ModelSerializer):
+    business_id = serializers.IntegerField(source="business.id", read_only=True)
+    business_name = serializers.CharField(source="business.business_name", read_only=True)
+    category_name = serializers.CharField(source="category.name", read_only=True)
+    image = serializers.SerializerMethodField()
+    quota_enabled = serializers.SerializerMethodField()
+    quota_remaining = serializers.SerializerMethodField()
+    quota_label = serializers.SerializerMethodField()
+    is_sold_out = serializers.SerializerMethodField()
+    can_add_to_cart = serializers.SerializerMethodField()
+
+    class Meta:
+        model = MenuItem
+        fields = [
+            "id",
+            "business_id",
+            "business_name",
+            "category_name",
+            "name",
+            "slug",
+            "description",
+            "minimum_grams",
+            "price_amount",
+            "image",
+            "quota_enabled",
+            "quota_remaining",
+            "quota_label",
+            "is_sold_out",
+            "can_add_to_cart",
+        ]
+
+    def get_image(self, obj) -> str:
+        assets = getattr(obj, "prefetched_public_media_assets", None)
+        if assets is None:
+            assets = list(
+                MediaAsset.objects.filter(
+                    menu_item=obj,
+                    is_active=True,
+                    media_type=MediaAsset.MediaType.IMAGE,
+                ).order_by("sort_order", "id")
+            )
+        return _image_for_role(assets, MediaAsset.AssetRole.THUMBNAIL) or _image_for_role(assets, MediaAsset.AssetRole.GALLERY)
+
+    def _quota_state(self, obj):
+        return build_menu_item_quota_state(obj)
+
+    def get_quota_enabled(self, obj) -> bool:
+        return self._quota_state(obj).enabled
+
+    def get_quota_remaining(self, obj) -> int | None:
+        return self._quota_state(obj).remaining
+
+    def get_quota_label(self, obj) -> str | None:
+        return self._quota_state(obj).label
+
+    def get_is_sold_out(self, obj) -> bool:
+        return self._quota_state(obj).is_sold_out
+
+    def get_can_add_to_cart(self, obj) -> bool:
+        return self._quota_state(obj).can_add_to_cart
+
+
+class DiscoverySearchCategoryResultSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MarketplaceCategory
+        fields = ["id", "slug", "name", "description"]
+
+
+class DiscoverySearchResponseSerializer(serializers.Serializer):
+    query = serializers.CharField(allow_blank=True)
+    district = serializers.CharField()
+    matched = serializers.BooleanField()
+    categories = DiscoverySearchCategoryResultSerializer(many=True)
+    businesses = DiscoverySearchBusinessSerializer(many=True)
+    menu_items = DiscoverySearchMenuItemResultSerializer(many=True)
 
 
 
@@ -309,6 +472,10 @@ class BusinessMenuItemSerializer(serializers.ModelSerializer):
     marketplace_categories = serializers.SerializerMethodField()
     media_assets = serializers.SerializerMethodField()
     primary_image_url = serializers.SerializerMethodField()
+    quota_enabled = serializers.BooleanField(source="quota.is_enabled", required=False, allow_null=True)
+    quota_total = serializers.IntegerField(source="quota.quota_total", required=False, allow_null=True, min_value=0)
+    quota_remaining = serializers.IntegerField(source="quota.quota_remaining", required=False, allow_null=True, min_value=0)
+    low_stock_threshold = serializers.IntegerField(source="quota.low_stock_threshold", required=False, min_value=0)
 
     class Meta:
         model = MenuItem
@@ -319,12 +486,17 @@ class BusinessMenuItemSerializer(serializers.ModelSerializer):
             "name",
             "slug",
             "description",
+            "minimum_grams",
             "price_amount",
             "image_url",
             "sort_order",
             "is_active",
             "is_visible",
             "is_available",
+            "quota_enabled",
+            "quota_total",
+            "quota_remaining",
+            "low_stock_threshold",
             "marketplace_category_ids",
             "marketplace_categories",
             "media_assets",
@@ -377,6 +549,19 @@ class BusinessMenuItemSerializer(serializers.ModelSerializer):
             assets,
             MediaAsset.AssetRole.GALLERY,
         )
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        try:
+            quota = instance.quota
+        except MenuItemQuota.DoesNotExist:
+            quota = None
+
+        data["quota_enabled"] = bool(quota and quota.is_enabled)
+        data["quota_total"] = int(quota.quota_total) if quota and quota.quota_total is not None else None
+        data["quota_remaining"] = int(quota.quota_remaining) if quota and quota.quota_remaining is not None else None
+        data["low_stock_threshold"] = int(quota.low_stock_threshold) if quota else 12
+        return data
 
     def validate_name(self, value):
         normalized_name = value.strip()
@@ -548,22 +733,64 @@ class BusinessMenuItemSerializer(serializers.ModelSerializer):
         if category_ids is not None:
             attrs["_resolved_marketplace_categories"] = self._resolve_marketplace_categories(category_ids)
 
+        quota_attrs = attrs.get("quota")
+        if quota_attrs is not None:
+            quota_total = quota_attrs.get("quota_total")
+            quota_remaining = quota_attrs.get("quota_remaining")
+            quota_enabled = quota_attrs.get("is_enabled")
+
+            if quota_enabled is True and quota_remaining is None:
+                quota_remaining = quota_total
+                quota_attrs["quota_remaining"] = quota_remaining
+
+            if quota_total is not None and quota_remaining is not None and int(quota_remaining) > int(quota_total):
+                raise serializers.ValidationError({"quota_remaining": "Kalan kota toplam kotadan büyük olamaz."})
+
         return attrs
 
     def create(self, validated_data):
+        quota_attrs = validated_data.pop("quota", None)
         categories = validated_data.pop("_resolved_marketplace_categories", [])
         validated_data.pop("marketplace_category_ids", None)
         menu_item = super().create(validated_data)
+        self._sync_quota(menu_item=menu_item, quota_attrs=quota_attrs)
         self._sync_marketplace_categories(menu_item=menu_item, categories=categories)
         return menu_item
 
     def update(self, instance, validated_data):
+        quota_attrs = validated_data.pop("quota", None)
         categories = validated_data.pop("_resolved_marketplace_categories", None)
         validated_data.pop("marketplace_category_ids", None)
         menu_item = super().update(instance, validated_data)
+        self._sync_quota(menu_item=menu_item, quota_attrs=quota_attrs)
         if categories is not None:
             self._sync_marketplace_categories(menu_item=menu_item, categories=categories)
         return menu_item
+
+    def _sync_quota(self, *, menu_item: MenuItem, quota_attrs: dict | None):
+        if quota_attrs is None:
+            return
+
+        existing = MenuItemQuota.objects.filter(menu_item=menu_item).first()
+        defaults = {
+            "is_enabled": bool(existing.is_enabled) if existing else False,
+            "quota_total": existing.quota_total if existing else None,
+            "quota_remaining": existing.quota_remaining if existing else None,
+            "quota_reserved": existing.quota_reserved if existing else 0,
+            "low_stock_threshold": existing.low_stock_threshold if existing else 12,
+        }
+        defaults.update(quota_attrs)
+
+        if defaults["is_enabled"] and defaults["quota_remaining"] is None:
+            defaults["quota_remaining"] = defaults["quota_total"]
+
+        if defaults["quota_total"] is not None and defaults["quota_remaining"] is not None and int(defaults["quota_remaining"]) > int(defaults["quota_total"]):
+            raise serializers.ValidationError({"quota_remaining": "Kalan kota toplam kotadan büyük olamaz."})
+
+        MenuItemQuota.objects.update_or_create(
+            menu_item=menu_item,
+            defaults=defaults,
+        )
 
 
 class MediaAssetSerializer(serializers.ModelSerializer):

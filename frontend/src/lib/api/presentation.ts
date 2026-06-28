@@ -1,8 +1,8 @@
 import { ApiClientError, getApiErrorMessage, getApiRequestId } from "@/lib/api/errors";
 
-export function describeApiError(error: unknown, fallback = "İşlem başarısız.") {
+export function describeApiError(error: unknown, fallback = "İşlem tamamlanamadı.", options?: { includeRequestId?: boolean }) {
   const message = getApiErrorMessage(error, fallback);
-  const requestId = getApiRequestId(error);
+  const requestId = options?.includeRequestId ? getApiRequestId(error) : undefined;
   return requestId ? `${message} · request_id: ${requestId}` : message;
 }
 

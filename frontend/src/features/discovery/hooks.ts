@@ -13,11 +13,13 @@ import {
 } from "@/features/discovery/api";
 import { discoveryQueryKeys } from "@/features/discovery/query-keys";
 
-export function useDiscoveryHome(district: string, authenticated: boolean, enabled = true) {
+export function useDiscoveryHome(district: string, authenticated: boolean, enabled = true, userId?: number | null) {
+  const userScope = authenticated ? `user:${userId ?? "pending"}` : "anonymous";
+
   return useQuery({
-    queryKey: discoveryQueryKeys.home(district, authenticated ? "authenticated" : "public"),
+    queryKey: discoveryQueryKeys.home(district, authenticated ? "authenticated" : "public", userScope),
     queryFn: () => getDiscoveryHome(district, authenticated),
-    enabled,
+    enabled: enabled && (!authenticated || Boolean(userId)),
   });
 }
 
@@ -75,10 +77,10 @@ export function usePublicBusinessMenu(businessId: number) {
   });
 }
 
-export function useCartSummary(enabled: boolean) {
+export function useCartSummary(enabled: boolean, userId?: number | null) {
   return useQuery({
-    queryKey: ["cart", "detail"],
+    queryKey: ["cart", "detail", userId ? `user:${userId}` : "anonymous"],
     queryFn: getCart,
-    enabled,
+    enabled: enabled && Boolean(userId),
   });
 }

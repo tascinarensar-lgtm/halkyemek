@@ -43,6 +43,10 @@ class BusinessProfile(models.Model):
     category = models.CharField(max_length=100)
 
     adress = models.TextField()
+    address_line = models.CharField(max_length=255, null=True, blank=True)
+    latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    google_maps_url = models.URLField(null=True, blank=True)
     district = models.CharField(
         max_length=32,
         choices=District.choices,
@@ -60,6 +64,8 @@ class BusinessProfile(models.Model):
     is_featured = models.BooleanField(default=False)
     display_priority = models.PositiveIntegerField(default=0)
     marketplace_is_visible = models.BooleanField(default=True)
+    supports_halkyemek = models.BooleanField(default=True)
+    supports_halktasarruf = models.BooleanField(default=False)
     short_description = models.CharField(max_length=280, blank=True, default="")
     intro_text = models.TextField(blank=True, default="")
     badge_text = models.CharField(max_length=64, blank=True, default="")
@@ -166,6 +172,8 @@ class BusinessMember(models.Model):
     )
     role = models.CharField(max_length=20, choices=Role.choices)
     is_active = models.BooleanField(default=True)
+    access_halkyemek = models.BooleanField(default=True)
+    access_halktasarruf = models.BooleanField(default=False)
     granted_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True,

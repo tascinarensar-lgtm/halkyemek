@@ -13,11 +13,13 @@ from drf_spectacular.utils import extend_schema
 from drf_spectacular.types import OpenApiTypes
 
 from businesses.api.serializers_ops import (
+    OpsBusinessCreateSerializer,
     OpsBusinessListQuerySerializer,
     OpsBusinessMembershipDeactivateSerializer,
     OpsBusinessMembershipUpsertSerializer,
     OpsBusinessStatusUpdateSerializer,
 )
+from businesses.api.location_validation import decimal_to_float
 from businesses.models import BusinessMember, BusinessProfile
 from businesses.services.membership import get_business_contact_metadata
 from common.locks import build_job_lock_token, job_lock
@@ -70,6 +72,12 @@ class OpsBusinessListAPIView(APIView):
 
         qs = BusinessProfile.objects.all().order_by("business_name", "id")
 
+        product = filters.get("product")
+        if product == "halkyemek":
+            qs = qs.filter(supports_halkyemek=True)
+        elif product == "halktasarruf":
+            qs = qs.filter(supports_halktasarruf=True)
+
         if "district" in request.query_params:
             qs = qs.filter(district=filters["district"])
         if "is_active" in request.query_params:
@@ -106,7 +114,13 @@ class OpsBusinessListAPIView(APIView):
                 "business_name": business.business_name,
                 "category": business.category,
                 "district": business.district,
+                "address_line": business.address_line,
+                "latitude": float(business.latitude) if business.latitude is not None else None,
+                "longitude": float(business.longitude) if business.longitude is not None else None,
+                "google_maps_url": business.google_maps_url,
                 "listing_type": business.listing_type,
+                "supports_halkyemek": business.supports_halkyemek,
+                "supports_halktasarruf": business.supports_halktasarruf,
                 "is_featured": business.is_featured,
                 "display_priority": business.display_priority,
                 "is_active": business.is_active,
@@ -115,12 +129,96 @@ class OpsBusinessListAPIView(APIView):
                 "marketplace_is_visible": business.marketplace_is_visible,
                 "payout_onboarding_status": business.payout_onboarding_status,
                 "iyzico_submerchant_key": business.iyzico_submerchant_key,
+                "kyc_contact_name": business.kyc_contact_name,
+                "kyc_contact_surname": business.kyc_contact_surname,
+                "kyc_identity_number": business.kyc_identity_number,
+                "kyc_tax_number": business.kyc_tax_number,
+                "kyc_iban": business.kyc_iban,
                 "active_membership_count": active_counts.get(business.id, 0),
                 "contact": get_business_contact_metadata(business),
             }
             for business in businesses
         ]
         return Response({"ok": True, "data": {"count": len(results), "results": results}}, status=status.HTTP_200_OK)
+
+    @extend_schema(operation_id="ops_businesses_create", request=OpsBusinessCreateSerializer, responses={201: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT}, tags=["ops-businesses"])
+    @transaction.atomic
+    def post(self, request):
+        serializer = OpsBusinessCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        payload = dict(serializer.validated_data)
+
+        contact_user_id = payload.pop("contact_user_id", None)
+        owner_user_id = payload.pop("owner_user_id", None)
+        owner_role = payload.pop("owner_role", BusinessMember.Role.OWNER)
+        address_line = payload.get("address_line") or ""
+        adress = payload.pop("adress", "") or address_line
+
+        business = BusinessProfile.objects.create(
+            contact_user_id=contact_user_id,
+            business_name=payload.pop("business_name"),
+            category=payload.pop("category"),
+            adress=adress,
+            **payload,
+        )
+
+        created_membership = None
+        if owner_user_id:
+            created_membership = BusinessMember.objects.create(
+                business=business,
+                user_id=owner_user_id,
+                role=owner_role,
+                is_active=True,
+                granted_by=request.user,
+            )
+
+        create_audit_log(
+            request=request,
+            user=request.user,
+            action="OPS_BUSINESS_CREATE",
+            description="Admin created business profile",
+            status_code=201,
+            meta={
+                "business_id": business.id,
+                "business_name": business.business_name,
+                "owner_user_id": owner_user_id,
+                "owner_role": owner_role if owner_user_id else None,
+            },
+        )
+
+        return Response(
+            {
+                "ok": True,
+                "data": {
+                    "id": business.id,
+                    "business_name": business.business_name,
+                    "category": business.category,
+                    "district": business.district,
+                    "adress": business.adress,
+                    "address_line": business.address_line,
+                    "latitude": decimal_to_float(business.latitude),
+                    "longitude": decimal_to_float(business.longitude),
+                    "google_maps_url": business.google_maps_url,
+                    "listing_type": business.listing_type,
+                    "supports_halkyemek": business.supports_halkyemek,
+                    "supports_halktasarruf": business.supports_halktasarruf,
+                    "is_featured": business.is_featured,
+                    "display_priority": business.display_priority,
+                    "is_active": business.is_active,
+                    "is_approved": business.is_approved,
+                    "is_listed": business.is_listed,
+                    "marketplace_is_visible": business.marketplace_is_visible,
+                    "payout_onboarding_status": business.payout_onboarding_status,
+                    "kyc_contact_name": business.kyc_contact_name,
+                    "kyc_contact_surname": business.kyc_contact_surname,
+                    "kyc_identity_number": business.kyc_identity_number,
+                    "kyc_tax_number": business.kyc_tax_number,
+                    "kyc_iban": business.kyc_iban,
+                    "active_membership_count": 1 if created_membership else 0,
+                },
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class OpsBusinessDetailAPIView(APIView):
@@ -140,15 +238,26 @@ class OpsBusinessDetailAPIView(APIView):
             "category": business.category,
             "district": business.district,
             "listing_type": business.listing_type,
+            "supports_halkyemek": business.supports_halkyemek,
+            "supports_halktasarruf": business.supports_halktasarruf,
             "is_featured": business.is_featured,
             "display_priority": business.display_priority,
             "adress": business.adress,
+            "address_line": business.address_line,
+            "latitude": float(business.latitude) if business.latitude is not None else None,
+            "longitude": float(business.longitude) if business.longitude is not None else None,
+            "google_maps_url": business.google_maps_url,
             "is_active": business.is_active,
             "is_approved": business.is_approved,
             "is_listed": business.is_listed,
             "marketplace_is_visible": business.marketplace_is_visible,
             "payout_onboarding_status": business.payout_onboarding_status,
             "payout_onboarding_note": business.payout_onboarding_note,
+            "kyc_contact_name": business.kyc_contact_name,
+            "kyc_contact_surname": business.kyc_contact_surname,
+            "kyc_identity_number": business.kyc_identity_number,
+            "kyc_tax_number": business.kyc_tax_number,
+            "kyc_iban": business.kyc_iban,
             "contact": get_business_contact_metadata(business),
             "iyzico_onboarding": {
                 "submerchant_type": business.iyzico_submerchant_type,
@@ -178,6 +287,8 @@ class OpsBusinessDetailAPIView(APIView):
                     "username": membership.user.username,
                     "email": membership.user.email,
                     "role": membership.role,
+                    "access_halkyemek": membership.access_halkyemek,
+                    "access_halktasarruf": membership.access_halktasarruf,
                     "granted_by_id": membership.granted_by_id,
                 }
                 for membership in active_memberships
@@ -199,14 +310,28 @@ class OpsBusinessStatusUpdateAPIView(APIView):
 
         payload = serializer.validated_data
         previous = {
+            "business_name": business.business_name,
+            "category": business.category,
+            "adress": business.adress,
+            "supports_halkyemek": business.supports_halkyemek,
+            "supports_halktasarruf": business.supports_halktasarruf,
             "is_active": business.is_active,
             "is_approved": business.is_approved,
             "is_listed": business.is_listed,
             "listing_type": business.listing_type,
             "is_featured": business.is_featured,
             "display_priority": business.display_priority,
+            "address_line": business.address_line,
+            "latitude": decimal_to_float(business.latitude),
+            "longitude": decimal_to_float(business.longitude),
+            "google_maps_url": business.google_maps_url,
             "marketplace_is_visible": business.marketplace_is_visible,
             "payout_onboarding_note": business.payout_onboarding_note,
+            "kyc_contact_name": business.kyc_contact_name,
+            "kyc_contact_surname": business.kyc_contact_surname,
+            "kyc_identity_number": business.kyc_identity_number,
+            "kyc_tax_number": business.kyc_tax_number,
+            "kyc_iban": business.kyc_iban,
         }
 
         update_fields: list[str] = []
@@ -226,7 +351,10 @@ class OpsBusinessStatusUpdateAPIView(APIView):
             meta={
                 "business_id": business.id,
                 "previous": previous,
-                "updated": {field: getattr(business, field) for field in payload.keys()},
+                "updated": {
+                    field: decimal_to_float(getattr(business, field)) if field in {"latitude", "longitude"} else getattr(business, field)
+                    for field in payload.keys()
+                },
             },
         )
 
@@ -235,10 +363,24 @@ class OpsBusinessStatusUpdateAPIView(APIView):
                 "ok": True,
                 "data": {
                     "business_id": business.id,
+                    "business_name": business.business_name,
+                    "category": business.category,
+                    "adress": business.adress,
+                    "supports_halkyemek": business.supports_halkyemek,
+                    "supports_halktasarruf": business.supports_halktasarruf,
                     "is_active": business.is_active,
                     "is_approved": business.is_approved,
                     "is_listed": business.is_listed,
+                    "address_line": business.address_line,
+                    "latitude": decimal_to_float(business.latitude),
+                    "longitude": decimal_to_float(business.longitude),
+                    "google_maps_url": business.google_maps_url,
                     "payout_onboarding_note": business.payout_onboarding_note,
+                    "kyc_contact_name": business.kyc_contact_name,
+                    "kyc_contact_surname": business.kyc_contact_surname,
+                    "kyc_identity_number": business.kyc_identity_number,
+                    "kyc_tax_number": business.kyc_tax_number,
+                    "kyc_iban": business.kyc_iban,
                 },
             },
             status=status.HTTP_200_OK,
@@ -268,6 +410,8 @@ class OpsBusinessMembershipListCreateAPIView(APIView):
                 "is_active": membership.is_active,
                 "granted_by_id": membership.granted_by_id,
                 "granted_by_username": getattr(membership.granted_by, "username", ""),
+                "access_halkyemek": membership.access_halkyemek,
+                "access_halktasarruf": membership.access_halktasarruf,
                 "created_at": membership.created_at,
                 "updated_at": membership.updated_at,
             }
@@ -302,6 +446,8 @@ class OpsBusinessMembershipListCreateAPIView(APIView):
             defaults={
                 "role": payload["role"],
                 "is_active": payload["is_active"],
+                "access_halkyemek": payload["access_halkyemek"],
+                "access_halktasarruf": payload["access_halktasarruf"],
                 "granted_by": request.user,
             },
         )
@@ -318,6 +464,8 @@ class OpsBusinessMembershipListCreateAPIView(APIView):
                 "member_user_id": membership.user_id,
                 "role": membership.role,
                 "is_active": membership.is_active,
+                "access_halkyemek": membership.access_halkyemek,
+                "access_halktasarruf": membership.access_halktasarruf,
                 "created": created,
             },
         )

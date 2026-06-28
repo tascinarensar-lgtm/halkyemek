@@ -93,9 +93,48 @@ FCM_PROJECT_ID = env_str("FCM_PROJECT_ID", default="")
 FCM_CLIENT_EMAIL = env_str("FCM_CLIENT_EMAIL", default="")
 FCM_PRIVATE_KEY = env_str("FCM_PRIVATE_KEY", default="")
 FCM_WEB_VAPID_KEY = env_str("FCM_WEB_VAPID_KEY", default="")
+EMAIL_BACKEND = env_str(
+    "EMAIL_BACKEND",
+    default="django.core.mail.backends.console.EmailBackend" if APP_ENV in {"dev", "test"} else "django.core.mail.backends.smtp.EmailBackend",
+)
+EMAIL_HOST = env_str("EMAIL_HOST", default="localhost")
+EMAIL_PORT = env_int("EMAIL_PORT", default=25)
+EMAIL_HOST_USER = env_str("EMAIL_HOST_USER", default="")
+EMAIL_HOST_PASSWORD = env_str("EMAIL_HOST_PASSWORD", default="")
+EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", default=False)
+EMAIL_USE_SSL = env_bool("EMAIL_USE_SSL", default=False)
+EMAIL_TIMEOUT = env_int("EMAIL_TIMEOUT", default=10)
+DEFAULT_FROM_EMAIL = env_str("DEFAULT_FROM_EMAIL", default="HalkYemek <bildirim@halkyemek.local>")
+EMAIL_NOTIFICATIONS_ENABLED = env_bool("EMAIL_NOTIFICATIONS_ENABLED", default=False)
+NOTIFICATION_EMAIL_FROM = env_str("NOTIFICATION_EMAIL_FROM", default=DEFAULT_FROM_EMAIL)
+NOTIFICATION_EMAIL_REQUIRE_VERIFIED_GOOGLE = env_bool("NOTIFICATION_EMAIL_REQUIRE_VERIFIED_GOOGLE", default=True)
+USER_REMINDER_EMAILS_ENABLED = env_bool("USER_REMINDER_EMAILS_ENABLED", default=True)
+USER_REMINDER_INTERVAL_DAYS = env_int("USER_REMINDER_INTERVAL_DAYS", default=5)
+USER_REMINDER_BATCH_SIZE = env_int("USER_REMINDER_BATCH_SIZE", default=100)
+ADMIN_EMAIL_BROADCAST_ENABLED = env_bool("ADMIN_EMAIL_BROADCAST_ENABLED", default=True)
+ADMIN_EMAIL_BROADCAST_BATCH_SIZE = env_int("ADMIN_EMAIL_BROADCAST_BATCH_SIZE", default=100)
+ADMIN_SYSTEM_BROADCAST_BATCH_SIZE = env_int("ADMIN_SYSTEM_BROADCAST_BATCH_SIZE", default=100)
+ADMIN_BROADCAST_LOCAL_FALLBACK_ENABLED = env_bool(
+    "ADMIN_BROADCAST_LOCAL_FALLBACK_ENABLED",
+    default=APP_ENV == "dev" and not TESTING,
+)
+ADMIN_BROADCAST_LOCAL_FALLBACK_DRAIN_LIMIT = env_int("ADMIN_BROADCAST_LOCAL_FALLBACK_DRAIN_LIMIT", default=100)
+ADMIN_BROADCAST_BROKER_PING_TIMEOUT_SECONDS = env_float("ADMIN_BROADCAST_BROKER_PING_TIMEOUT_SECONDS", default=0.75)
 
 IYZICO_SECRET_KEY = env_str("IYZICO_SECRET_KEY", default="")
 IYZICO_API_KEY = env_str("IYZICO_API_KEY", default="")
+PAYMENT_WEBHOOK_SECRET = env_str("PAYMENT_WEBHOOK_SECRET", default="")
+TOPUP_PROVIDER = env_str("TOPUP_PROVIDER", default="manual").strip().lower()
+MANUAL_TOPUP_ACCOUNT_NAME = env_str("MANUAL_TOPUP_ACCOUNT_NAME", default="HalkYemek")
+MANUAL_TOPUP_IBAN = env_str("MANUAL_TOPUP_IBAN", default="")
+MANUAL_TOPUP_INSTRUCTIONS = env_list(
+    "MANUAL_TOPUP_INSTRUCTIONS",
+    default=[
+        "Odeme aciklamasina yukleme referansini yazin.",
+        "HalkYemek operasyon ekibi odemeyi kontrol edince bakiye cuzdaniniza yansir.",
+        "Ayni referansla birden fazla onay verilirse sistem bakiyeyi ikinci kez yuklemez.",
+    ],
+)
 IYZICO_BASE_URL = env_str(
     "IYZICO_BASE_URL",
     default="https://sandbox-api.iyzipay.com" if APP_ENV in {"dev", "staging", "test"} else "https://api.iyzipay.com",
@@ -149,6 +188,7 @@ INSTALLED_APPS = [
     "wallets.apps.WalletsConfig",
     "businesses",
     "menus",
+    "surprise_deals.apps.SurpriseDealsConfig",
     "orders",
     "payments",
     "logs",
@@ -168,6 +208,11 @@ SPECTACULAR_SETTINGS = {
     "COMPONENT_SPLIT_REQUEST": True,
     "SECURITY": [{"bearerAuth": []}],
     "SWAGGER_UI_SETTINGS": {"persistAuthorization": True},
+    "ENUM_NAME_OVERRIDES": {
+        "UserRoleEnum": "accounts.models.User.Role",
+        "BusinessMemberRoleEnum": "businesses.models.BusinessMember.Role",
+        "SurpriseDealStatusEnum": "surprise_deals.models.SurpriseDeal.Status",
+    },
     "TAGS": [
         {"name": "auth", "description": "Authentication ve JWT token alma yüzeyi."},
         {"name": "discovery", "description": "Public katalog, discovery ve işletme menüsü yüzeyi."},
@@ -335,6 +380,8 @@ CELERY_BROKER_URL = env_str("CELERY_BROKER_URL", default=env_str("REDIS_CACHE_UR
 CELERY_RESULT_BACKEND = env_str("CELERY_RESULT_BACKEND", default=CELERY_BROKER_URL)
 CELERY_TASK_ALWAYS_EAGER = env_bool("CELERY_TASK_ALWAYS_EAGER", default=False)
 CELERY_TASK_EAGER_PROPAGATES = env_bool("CELERY_TASK_EAGER_PROPAGATES", default=TESTING)
+CELERY_BROKER_CONNECTION_TIMEOUT = env_float("CELERY_BROKER_CONNECTION_TIMEOUT", default=1.0)
+CELERY_REDIS_SOCKET_TIMEOUT = env_float("CELERY_REDIS_SOCKET_TIMEOUT", default=1.0)
 CELERY_TASK_TIME_LIMIT = env_int("CELERY_TASK_TIME_LIMIT", default=15 * 60)
 CELERY_TASK_SOFT_TIME_LIMIT = env_int("CELERY_TASK_SOFT_TIME_LIMIT", default=10 * 60)
 CELERY_WORKER_PREFETCH_MULTIPLIER = env_int("CELERY_WORKER_PREFETCH_MULTIPLIER", default=1)
@@ -351,6 +398,9 @@ CELERY_BROKER_TRANSPORT_OPTIONS = {
     "visibility_timeout": CELERY_VISIBILITY_TIMEOUT,
     "fanout_prefix": True,
     "fanout_patterns": True,
+    "socket_connect_timeout": CELERY_REDIS_SOCKET_TIMEOUT,
+    "socket_timeout": CELERY_REDIS_SOCKET_TIMEOUT,
+    "retry_on_timeout": False,
 }
 CELERY_RESULT_BACKEND_TRANSPORT_OPTIONS = {
     "visibility_timeout": CELERY_VISIBILITY_TIMEOUT,
@@ -359,6 +409,10 @@ CELERY_TASK_ROUTES = {
     "common.tasks.record_scheduler_heartbeat_task": {"queue": "ops"},
     "notifications.tasks.process_notifications_task": {"queue": "ops"},
     "notifications.tasks.send_notification_attempt_task": {"queue": "notifications"},
+    "notifications.tasks.send_notification_email_attempt_task": {"queue": "notifications"},
+    "notifications.tasks.send_user_reminder_emails_task": {"queue": "notifications"},
+    "notifications.tasks.send_admin_system_broadcast_task": {"queue": "notifications"},
+    "notifications.tasks.send_admin_email_broadcast_task": {"queue": "notifications"},
     "notifications.tasks.process_notification_attempts_for_notification_task": {"queue": "notifications"},
     "orders.tasks.cleanup_checkout_sessions_task": {"queue": "ops"},
     "payments.tasks.reprocess_unmatched_settlement_records_task": {"queue": "finance"},
@@ -381,6 +435,12 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": 60.0,
         "kwargs": {"limit": 100},
         "options": {"expires": min(BEAT_JOB_EXPIRES_SHORT_SECONDS, 60)},
+    },
+    "send_user_reminder_emails_daily": {
+        "task": "notifications.tasks.send_user_reminder_emails_task",
+        "schedule": 86400.0,
+        "kwargs": {"limit": USER_REMINDER_BATCH_SIZE},
+        "options": {"expires": min(BEAT_JOB_EXPIRES_LONG_SECONDS, 3600)},
     },
     "dispatch_due_payouts_every_five_minutes": {
         "task": "payouts.tasks.dispatch_due_payouts_task",
@@ -465,10 +525,10 @@ TIME_ZONE = env_str("TIME_ZONE", default="Europe/Istanbul")
 USE_I18N = True
 USE_TZ = True
 
-STATIC_URL = "/static/"
-STATIC_ROOT = BASE_DIR / "staticfiles"
-MEDIA_URL = "/media/"
-MEDIA_ROOT = BASE_DIR / "media"
+STATIC_URL = env_str("STATIC_URL", default="/static/")
+STATIC_ROOT = Path(env_str("STATIC_ROOT", default=str(BASE_DIR / "staticfiles")))
+MEDIA_URL = env_str("MEDIA_URL", default="/media/")
+MEDIA_ROOT = Path(env_str("MEDIA_ROOT", default=str(BASE_DIR / "media")))
 MEDIA_ASSET_MAX_BYTES = env_int("MEDIA_ASSET_MAX_BYTES", default=8 * 1024 * 1024)
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
@@ -572,6 +632,7 @@ if "test" in sys.argv:
         "accounts": None,
         "businesses": None,
         "menus": None,
+        "surprise_deals": None,
         "orders": None,
         "wallets": None,
         "payments": None,

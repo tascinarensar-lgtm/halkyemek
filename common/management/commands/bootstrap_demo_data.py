@@ -26,6 +26,22 @@ User = get_user_model()
 
 DEMO_PASSWORD = "Demo12345!"
 
+DEMO_IMAGE_URLS = {
+    "business_cover": "https://static.halkyemek.com/home/edirne-de-yemek-kulturune.jpg",
+    "business_logo": "https://static.halkyemek.com/logo-halkyemek.png",
+    "volunteer_cover": "https://static.halkyemek.com/home/nohutlu-pilav-223.webp",
+    "lentil_soup": "https://images.unsplash.com/photo-1547592166-23ac45744acd?auto=format&fit=crop&w=900&q=80",
+    "kuru_fasulye": "https://static.halkyemek.com/home/edirne-de-yemek-kulturune.jpg",
+    "tavuklu_pilav": "https://static.halkyemek.com/home/nohutlu-pilav-223.webp",
+    "yogurt_drink": "https://images.unsplash.com/photo-1621506289937-a8e4df240d0b?auto=format&fit=crop&w=900&q=80",
+    "nohutlu_pilav": "https://static.halkyemek.com/home/nohutlu-pilav-223.webp",
+    "burger": "https://static.halkyemek.com/cuisines/lysj-listing.webp",
+    "pizza": "https://static.halkyemek.com/cuisines/lu8a-hero.webp",
+    "doner": "https://static.halkyemek.com/cuisines/i.webp",
+    "kebap": "https://static.halkyemek.com/cuisines/1738662779653_1000x750.webp",
+    "volunteer": "https://static.halkyemek.com/cuisines/8dc943a74b6bb40c68ebe46123465da2.jpeg",
+}
+
 
 class Command(BaseCommand):
     help = "Bootstrap idempotent development/demo data for local smoke tests."
@@ -74,7 +90,7 @@ class Command(BaseCommand):
         featured_business = self._ensure_business(
             slug="beylikduzu-lokantasi",
             name="Beylikdüzü Lokantası",
-            category="Ev Yemeği",
+            category="Döner",
             district=district,
             short_description="Günlük ev yemeği ve ekonomik öğle menüsü.",
             intro_text="Yerel smoke test akışı için doldurulmuş örnek işletme.",
@@ -91,7 +107,7 @@ class Command(BaseCommand):
         volunteer_business = self._ensure_business(
             slug="komsu-mutfagi",
             name="Komşu Mutfağı",
-            category="Pilav & Makarna",
+            category="Burger",
             district=district,
             short_description="Gönüllü/uygun fiyatlı demo işletme kaydı.",
             intro_text="Other businesses ve kategori listeleri boş kalmasın diye eklenmiş ikinci görünür işletme.",
@@ -104,11 +120,14 @@ class Command(BaseCommand):
             iyzico_submerchant_key="SUBM-DEMO-002",
             contact_user=business_user,
             email="komsu@example.com",
+            address_line="Beylikdüzü, İstanbul",
+            latitude=Decimal("41.0019"),
+            longitude=Decimal("28.6416"),
         )
         review_business = self._ensure_business(
             slug="inceleme-bekleyen-isletme",
             name="İnceleme Bekleyen İşletme",
-            category="Sandviç & Tost",
+            category="Kebap",
             district=district,
             short_description="Ops listelerinde bekleyen statü örneği.",
             intro_text="Ops onboarding ve status ekranlarının tamamen boş görünmemesi için bekleyen kayıt.",
@@ -130,28 +149,30 @@ class Command(BaseCommand):
         self._ensure_membership(volunteer_business, business_user, BusinessMember.Role.CASHIER, ops_user)
         self._ensure_membership(review_business, business_user, BusinessMember.Role.MANAGER, ops_user)
 
-        self._assign_marketplace_category(featured_business, "ev-yemekleri", is_primary=True)
-        self._assign_marketplace_category(volunteer_business, "diger", is_primary=True)
-        self._assign_marketplace_category(review_business, "tavuk-doner", is_primary=True)
+        self._assign_marketplace_category(featured_business, "doner", is_primary=True)
+        self._assign_marketplace_category(volunteer_business, "burger", is_primary=True)
+        self._assign_marketplace_category(review_business, "kebap", is_primary=True)
 
         featured_cat_main = self._ensure_category(featured_business, "Günün Menüsü", 10)
         featured_cat_drink = self._ensure_category(featured_business, "İçecekler", 20)
         volunteer_cat = self._ensure_category(volunteer_business, "Pilavlar", 10)
 
-        mercimek = self._ensure_menu_item(featured_business, featured_cat_main, "Mercimek Çorbası", 6500, 10)
-        kuru = self._ensure_menu_item(featured_business, featured_cat_main, "Kuru Fasulye Menü", 15000, 20)
-        pilav = self._ensure_menu_item(featured_business, featured_cat_main, "Tavuklu Pilav", 14500, 30)
-        ayran = self._ensure_menu_item(featured_business, featured_cat_drink, "Ayran", 3000, 10)
-        gonullu = self._ensure_menu_item(volunteer_business, volunteer_cat, "Nohutlu Pilav", 12000, 10)
+        mercimek = self._ensure_menu_item(featured_business, featured_cat_main, "Mercimek Çorbası", 6500, 10, DEMO_IMAGE_URLS["lentil_soup"])
+        kuru = self._ensure_menu_item(featured_business, featured_cat_main, "Kuru Fasulye Menü", 15000, 20, DEMO_IMAGE_URLS["kuru_fasulye"])
+        pilav = self._ensure_menu_item(featured_business, featured_cat_main, "Tavuklu Pilav", 14500, 30, DEMO_IMAGE_URLS["tavuklu_pilav"])
+        ayran = self._ensure_menu_item(featured_business, featured_cat_drink, "Ayran", 3000, 10, DEMO_IMAGE_URLS["yogurt_drink"])
+        gonullu = self._ensure_menu_item(volunteer_business, volunteer_cat, "Nohutlu Pilav", 12000, 10, DEMO_IMAGE_URLS["nohutlu_pilav"])
 
-        self._ensure_business_media(featured_business, MediaAsset.AssetRole.COVER, "beylikduzu-cover")
-        self._ensure_business_media(featured_business, MediaAsset.AssetRole.LOGO, "beylikduzu-logo")
-        self._ensure_business_media(volunteer_business, MediaAsset.AssetRole.COVER, "komsu-cover")
-        self._ensure_menu_media(kuru, "kuru-fasulye")
-        self._ensure_menu_media(pilav, "tavuklu-pilav")
-        self._ensure_menu_media(gonullu, "nohutlu-pilav")
-        self._ensure_category_media("ev-yemekleri", "kategori-ev-yemegi")
-        self._ensure_category_media("diger", "kategori-diger")
+        self._ensure_business_media(featured_business, MediaAsset.AssetRole.COVER, "beylikduzu-cover", DEMO_IMAGE_URLS["business_cover"])
+        self._ensure_business_media(featured_business, MediaAsset.AssetRole.LOGO, "beylikduzu-logo", DEMO_IMAGE_URLS["business_logo"])
+        self._ensure_business_media(volunteer_business, MediaAsset.AssetRole.COVER, "komsu-cover", DEMO_IMAGE_URLS["volunteer_cover"])
+        self._ensure_menu_media(mercimek, "lentil-soup", DEMO_IMAGE_URLS["lentil_soup"])
+        self._ensure_menu_media(kuru, "kuru-fasulye", DEMO_IMAGE_URLS["kuru_fasulye"])
+        self._ensure_menu_media(pilav, "tavuklu-pilav", DEMO_IMAGE_URLS["tavuklu_pilav"])
+        self._ensure_menu_media(ayran, "yogurt-drink", DEMO_IMAGE_URLS["yogurt_drink"])
+        self._ensure_menu_media(gonullu, "nohutlu-pilav", DEMO_IMAGE_URLS["nohutlu_pilav"])
+        self._ensure_category_media("doner", "kategori-doner")
+        self._ensure_category_media("burger", "kategori-burger")
 
         live_offer = self._ensure_offer(
             featured_business,
@@ -272,6 +293,18 @@ class Command(BaseCommand):
             settled_at=now - timedelta(days=2),
             settlement_reference_code="SETTLE-TOPUP-1",
         )
+        WalletService.topup_pending(
+            user=customer,
+            amount=int(topup_intent.amount),
+            description="Demo topup pending",
+            payment_intent=topup_intent,
+        )
+        WalletService.settle_pending_to_available(
+            user=customer,
+            amount=int(topup_intent.amount),
+            description="Demo topup settlement",
+            payment_intent=topup_intent,
+        )
 
         for order in [used_order, paid_order]:
             stable_eligible_at = (order.paid_at or now) + timedelta(hours=1)
@@ -370,13 +403,17 @@ class Command(BaseCommand):
     def _ensure_business(self, *, slug: str, name: str, category: str, district: str, short_description: str, intro_text: str, badge_text: str,
                          listing_type: str, is_featured: bool, display_priority: int, payout_onboarding_status: str,
                          iyzico_submerchant_status: str, iyzico_submerchant_key: str, contact_user, email: str,
-                         is_approved: bool = True, marketplace_is_visible: bool = True):
+                         is_approved: bool = True, marketplace_is_visible: bool = True, address_line: str = None, latitude: Decimal = None, longitude: Decimal = None, google_maps_url: str = None):
         business, _ = BusinessProfile.objects.update_or_create(
             business_name=name,
             defaults={
                 "contact_user": contact_user,
                 "category": category,
                 "adress": f"{name} Demo Adres / Beylikdüzü",
+                "address_line": address_line,
+                "latitude": latitude,
+                "longitude": longitude,
+                "google_maps_url": google_maps_url,
                 "district": district,
                 "is_approved": is_approved,
                 "is_active": True,
@@ -445,8 +482,10 @@ class Command(BaseCommand):
         )
         return category
 
-    def _ensure_menu_item(self, business, category, name: str, price_amount: int, sort_order: int):
+    def _ensure_menu_item(self, business, category, name: str, price_amount: int, sort_order: int, image_url: str = None):
         slug = slugify(name)
+        if image_url is None:
+            image_url = f"https://picsum.photos/seed/{slug}/640/480"
         item, _ = MenuItem.objects.update_or_create(
             business=business,
             slug=slug,
@@ -459,12 +498,12 @@ class Command(BaseCommand):
                 "is_active": True,
                 "is_visible": True,
                 "is_available": True,
-                "image_url": f"https://picsum.photos/seed/{slug}/640/480",
+                "image_url": image_url,
             },
         )
         return item
 
-    def _ensure_business_media(self, business, asset_role: str, seed: str):
+    def _ensure_business_media(self, business, asset_role: str, seed: str, file_url: str = None):
         MediaAsset.objects.update_or_create(
             business=business,
             menu_item=None,
@@ -473,20 +512,20 @@ class Command(BaseCommand):
             asset_role=asset_role,
             defaults={
                 "media_type": MediaAsset.MediaType.IMAGE,
-                "file_url": f"https://picsum.photos/seed/{seed}/800/600",
+                "file_url": file_url or f"https://picsum.photos/seed/{seed}/800/600",
                 "alt_text": f"{business.business_name} {asset_role.lower()}",
                 "sort_order": 10,
                 "is_active": True,
             },
         )
 
-    def _ensure_menu_media(self, menu_item, seed: str):
+    def _ensure_menu_media(self, menu_item, seed: str, file_url: str = None):
         MediaAsset.objects.update_or_create(
             menu_item=menu_item,
             asset_role=MediaAsset.AssetRole.THUMBNAIL,
             defaults={
                 "media_type": MediaAsset.MediaType.IMAGE,
-                "file_url": f"https://picsum.photos/seed/{seed}/800/600",
+                "file_url": file_url or DEMO_IMAGE_URLS.get(seed.replace("-", "_"), f"https://picsum.photos/seed/{seed}/800/600"),
                 "alt_text": menu_item.name,
                 "sort_order": 10,
                 "is_active": True,
@@ -585,6 +624,7 @@ class Command(BaseCommand):
                     "category_id": menu_item.category_id,
                     "name": menu_item.name,
                     "price_amount": int(menu_item.price_amount),
+                    "image_url": menu_item.image_url or "",
                 },
                 "sort_order": sort_order,
             },
@@ -675,6 +715,7 @@ class Command(BaseCommand):
                     "category_id": menu_item.category_id,
                     "name": menu_item.name,
                     "price_amount": int(menu_item.price_amount),
+                    "image_url": menu_item.image_url or "",
                 },
                 "sort_order": sort_order,
             },
@@ -688,6 +729,7 @@ class Command(BaseCommand):
 
     def _ensure_payment_intent(self, *, key: str, user, purpose: str, amount: int, status: str, provider_payment_id: str, provider_session_token: str, provider_page_url: str,
                                is_processed: bool, is_settled: bool, settled_at, settlement_reference_code: str):
+        is_topup = purpose == PaymentIntent.Purpose.TOPUP
         intent, _ = PaymentIntent.objects.update_or_create(
             provider_payment_id=provider_payment_id,
             defaults={
@@ -709,7 +751,7 @@ class Command(BaseCommand):
                 "marketplace_conversation_id": f"HY-PI-DEMO-{slugify(key).upper()}",
                 "submerchant_key": "",
                 "submerchant_price": 0,
-                "gross_price": amount,
+                "gross_price": 0 if is_topup else amount,
                 "platform_fee": 0,
             },
         )
@@ -796,7 +838,7 @@ class Command(BaseCommand):
         )
 
     def _ensure_settlement_record_unmatched(self, settlement_import, business, now):
-        SettlementRecord.objects.update_or_create(
+        record, _ = SettlementRecord.objects.update_or_create(
             provider=SettlementRecord.Provider.IYZICO,
             external_settlement_id="demo-settlement-record-open",
             defaults={
@@ -829,6 +871,8 @@ class Command(BaseCommand):
                 "settled_at": None,
             },
         )
+        # Keep demo unmatched record inside the retry window so it does not trip stale-manual-review integrity alarms.
+        SettlementRecord.objects.filter(pk=record.pk).update(created_at=now - timedelta(minutes=20))
 
     def _ensure_notification(self, user, notif_type: str, title: str, body: str, payload: dict, device):
         notification, _ = Notification.objects.update_or_create(

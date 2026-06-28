@@ -35,18 +35,17 @@ if (self.__FIREBASE_MESSAGING_CONFIG__?.firebaseConfig) {
   const messaging = firebase.messaging();
 
   messaging.onBackgroundMessage((payload) => {
-    if (payload?.notification) {
-      return;
-    }
-
-    const title = payload?.data?.title || "HalkYemek";
-    const body = payload?.data?.body || "Yeni bir bildirimin var.";
-    const url = payload?.data?.url || self.__FIREBASE_MESSAGING_CONFIG__.defaultClickUrl || new URL("/bildirimler", self.location.origin).toString();
+    const title = payload?.data?.title || payload?.notification?.title || "HalkYemek";
+    const body = payload?.data?.body || payload?.notification?.body || "Yeni bir bildirimin var.";
+    const url = payload?.data?.url || payload?.fcmOptions?.link || self.__FIREBASE_MESSAGING_CONFIG__.defaultClickUrl || new URL("/bildirimler", self.location.origin).toString();
 
     self.registration.showNotification(title, {
       body,
+      icon: "/logo-halkyemek.png",
+      badge: "/hy-favicon.svg",
       data: { url },
       tag: payload?.data?.tag || "halkyemek-notification",
+      renotify: true,
     });
   });
 }

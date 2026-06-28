@@ -26,6 +26,10 @@ export interface BusinessCategorySummary {
 export interface PublicBusinessSummary {
   id: number;
   business_name: string;
+  address_line?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  google_maps_url?: string | null;
   district: string;
   district_label: string;
   listing_type: BusinessListingType;
@@ -37,6 +41,10 @@ export interface PublicBusinessSummary {
   cover_image: string;
   logo_image: string;
   primary_marketplace_category: BusinessCategorySummary | null;
+  menu_quota_item_count: number;
+  menu_quota_remaining: number | null;
+  menu_quota_label: string | null;
+  menu_quota_is_sold_out: boolean;
 }
 
 export interface DiscoveryBusinessCard extends PublicBusinessSummary {
@@ -56,6 +64,29 @@ export interface OfferSummary {
   ends_at: string;
   is_live: boolean;
   image: string;
+}
+
+export interface DiscoveryHomeMenuItem {
+  id: number;
+  business_id: number;
+  business_name: string;
+  business_is_featured: boolean;
+  category_id: number;
+  category_name: string;
+  marketplace_category_name: string;
+  name: string;
+  slug: string;
+  description: string;
+  minimum_grams: number | null;
+  price_amount: number;
+  image_url: string;
+  image: string;
+  is_available: boolean;
+  quota_enabled: boolean;
+  quota_remaining: number | null;
+  quota_label: string | null;
+  is_sold_out: boolean;
+  can_add_to_cart: boolean;
 }
 
 export interface WalletSummary {
@@ -83,6 +114,7 @@ export interface DiscoveryHomeResponse {
   categories: MarketplaceCategorySummary[];
   featured_businesses: DiscoveryBusinessCard[];
   other_businesses: DiscoveryBusinessCard[];
+  menu_items: DiscoveryHomeMenuItem[];
   active_offers: OfferSummary[];
   wallet_summary: WalletSummary | null;
   active_cart_summary: ActiveCartSummary | null;
@@ -136,14 +168,27 @@ export interface MenuItemSummary {
   name: string;
   slug: string;
   description: string;
+  minimum_grams: number | null;
   price_amount: number;
   image_url: string;
   image: string;
   is_available: boolean;
+  quota_enabled: boolean;
+  quota_remaining: number | null;
+  quota_label: string | null;
+  is_sold_out: boolean;
+  can_add_to_cart: boolean;
+  marketplace_categories?: Array<{
+    id: number;
+    slug: string;
+    name: string;
+    is_primary: boolean;
+  }>;
 }
 
 export interface PublicMenuCategory {
   id: number;
+  slug?: string;
   name: string;
   description: string | null;
   menu_items: MenuItemSummary[];
@@ -153,4 +198,38 @@ export interface PublicBusinessMenuResponse {
   business: PublicBusinessSummary;
   categories: PublicMenuCategory[];
   active_offers: OfferSummary[];
+}
+
+export interface DiscoverySearchCategoryResult {
+  id: number;
+  slug: string;
+  name: string;
+  description: string;
+}
+
+export interface DiscoverySearchMenuItemResult {
+  id: number;
+  business_id: number;
+  business_name: string;
+  category_name: string;
+  name: string;
+  slug: string;
+  description: string;
+  minimum_grams: number | null;
+  price_amount: number;
+  image: string;
+  quota_enabled: boolean;
+  quota_remaining: number | null;
+  quota_label: string | null;
+  is_sold_out: boolean;
+  can_add_to_cart: boolean;
+}
+
+export interface DiscoverySearchResponse {
+  query: string;
+  district: string;
+  matched: boolean;
+  categories: DiscoverySearchCategoryResult[];
+  businesses: PublicBusinessSummary[];
+  menu_items: DiscoverySearchMenuItemResult[];
 }

@@ -17,7 +17,21 @@ export interface CartItemSnapshot {
   unit_price_amount: number;
   line_total_amount: number;
   sort_order: number;
-  menu_item_snapshot: Record<string, unknown>;
+  menu_item_snapshot: {
+    menu_item_id?: number;
+    business_id?: number;
+    category_id?: number;
+    name?: string;
+    price_amount?: number;
+    image_url?: string;
+    quota_enabled?: boolean;
+    quota_remaining?: number | null;
+    quota_label?: string | null;
+    is_sold_out?: boolean;
+    can_add_to_cart?: boolean;
+    low_stock_threshold?: number;
+    [key: string]: unknown;
+  };
 }
 
 export interface CartDetail {
@@ -40,13 +54,20 @@ export interface CheckoutSessionBusiness {
 }
 
 export interface CheckoutSessionItem {
-  menu_item_id: number;
+  menu_item_id?: number | null;
+  source_type?: "CART" | "SURPRISE_DEAL" | string;
+  surprise_deal_id?: number;
   menu_item_name?: string;
   name?: string;
   quantity: number;
   unit_price_amount: number;
   line_total_amount: number;
   sort_order: number;
+  image_url?: string;
+  pickup_window_start?: string;
+  pickup_window_end?: string;
+  original_value_amount?: number;
+  menu_item_snapshot?: CartItemSnapshot["menu_item_snapshot"];
 }
 
 export interface CheckoutSessionDetail {
@@ -54,6 +75,7 @@ export interface CheckoutSessionDetail {
   token: string;
   cashier_code?: string | null;
   status: string;
+  source_type: "CART" | "SURPRISE_DEAL" | string;
   amount: number;
   total_payable_amount: number;
   subtotal_amount: number;
@@ -64,8 +86,12 @@ export interface CheckoutSessionDetail {
   item_count: number;
   currency: string;
   expires_at: string | null;
+  created_at?: string;
+  updated_at?: string;
+  consumed_at?: string | null;
+  cancelled_at?: string | null;
   business: CheckoutSessionBusiness;
-  cart: { id: number };
+  cart: { id: number | null };
   pricing: CartPricingSnapshot | null;
   items: CheckoutSessionItem[];
 }

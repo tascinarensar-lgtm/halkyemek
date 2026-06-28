@@ -139,6 +139,15 @@ class Command(BaseCommand):
                 {"check_changes": True, "dry_run": True, "interactive": False},
             ),
             ("migrate", ["--check"], {}),
+            (
+                "bootstrap_marketplace",
+                [
+                    "--district",
+                    getattr(settings, "BOOTSTRAP_MARKETPLACE_DISTRICT", "BEYLIKDUZU"),
+                    "--overwrite-descriptions",
+                ],
+                {},
+            ),
             ("verify_bootstrap_marketplace", ["--district", getattr(settings, "BOOTSTRAP_MARKETPLACE_DISTRICT", "BEYLIKDUZU")], {}),
             ("verify_financial_integrity", [], {}),
             ("report_financial_anomalies", [], {}),

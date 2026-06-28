@@ -1,9 +1,11 @@
 from django.core.management.base import BaseCommand
+from django.db import transaction
 from django.utils import timezone
 
 from common.locks import build_job_lock_token, job_lock
 from health.services import JobHeartbeatService
 from orders.models import CheckoutSession
+from orders.services_quota import release_quota_for_checkout_session
 
 
 class Command(BaseCommand):
@@ -34,17 +36,24 @@ class Command(BaseCommand):
                 )
                 updated = 0
                 if session_ids:
-                    updated = CheckoutSession.objects.filter(
-                        id__in=session_ids,
-                        status__in=[
-                            CheckoutSession.Status.PENDING,
-                            CheckoutSession.Status.CONFIRMED,
-                        ],
-                        expires_at__lte=now,
-                    ).update(
-                        status=CheckoutSession.Status.EXPIRED,
-                        updated_at=now,
-                    )
+                    with transaction.atomic():
+                        sessions = (
+                            CheckoutSession.objects.select_for_update()
+                            .filter(
+                                id__in=session_ids,
+                                status__in=[
+                                    CheckoutSession.Status.PENDING,
+                                    CheckoutSession.Status.CONFIRMED,
+                                ],
+                                expires_at__lte=now,
+                            )
+                            .order_by("id")
+                        )
+                        for session in sessions:
+                            session.status = CheckoutSession.Status.EXPIRED
+                            session.save(update_fields=["status", "updated_at"])
+                            release_quota_for_checkout_session(session=session)
+                            updated += 1
                 JobHeartbeatService.success(
                     "cleanup_checkout_sessions",
                     processed=updated,

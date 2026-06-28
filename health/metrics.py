@@ -78,7 +78,7 @@ def build_metrics_text() -> str:
     lines.append("# TYPE halkyemek_runtime_check_ok gauge")
     from health.views import _runtime_core_checks
 
-    for check_name, check_ok in _runtime_core_checks().items():
+    for check_name, check_ok in _runtime_core_checks(include_active_checks=False).items():
         lines.append(f'halkyemek_runtime_check_ok{{check="{check_name}"}} {int(check_ok)}')
 
     job_ttls = job_heartbeat_ttls()

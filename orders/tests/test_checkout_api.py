@@ -19,9 +19,10 @@ from wallets.models import Wallet, WalletTransaction
 class CheckoutApiTests(TestCase):
     def setUp(self):
         self.client = APIClient()
-        self.customer = create_user(username="customer")
-        self.cashier = create_user(username="cashier")
-        self.other_user = create_user(username="other")
+        test_name = self._testMethodName
+        self.customer = create_user(username=f"customer-{test_name}")
+        self.cashier = create_user(username=f"cashier-{test_name}")
+        self.other_user = create_user(username=f"other-{test_name}")
         self.business = create_business(name="Biz")
         self.other_business = create_business(name="Other Biz")
         add_membership(business=self.business, user=self.cashier, role=BusinessMember.Role.CASHIER)
@@ -91,6 +92,94 @@ class CheckoutApiTests(TestCase):
         self.assertEqual(resp.data["status"], "PENDING")
         self.assertEqual(resp.data["amount"], self.menu_item.price_amount + 1000)
         self.assertEqual(resp["Idempotency-Replayed"], "false")
+
+    def test_authenticated_user_without_push_device_can_create_checkout_session(self):
+        no_push_user = create_user(username="customer-no-push")
+        seed_wallet(user=no_push_user, amount=200000)
+        CartService.add_item(user=no_push_user, menu_item=self.menu_item, quantity=1)
+
+        self.client.force_authenticate(no_push_user)
+        resp = self.client.post(
+            "/api/v1/checkout-sessions/",
+            {},
+            format="json",
+            HTTP_IDEMPOTENCY_KEY="checkout-create-no-push-device",
+        )
+
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.data["status"], CheckoutSession.Status.PENDING)
+
+    def test_checkout_session_create_does_not_debit_wallet_until_business_consume(self):
+        wallet_before = Wallet.objects.get(user=self.customer).balance
+
+        create_resp = self._create_session()
+        token = create_resp.data["token"]
+
+        wallet_after_create = Wallet.objects.get(user=self.customer).balance
+        self.assertEqual(wallet_after_create, wallet_before)
+        self.assertFalse(
+            WalletTransaction.objects.filter(
+                wallet__user=self.customer,
+                transaction_type=WalletTransaction.Type.PURCHASE,
+            ).exists()
+        )
+
+        self.client.force_authenticate(self.cashier)
+        consume_resp = self.client.post(
+            f"/api/v1/businesses/{self.business.id}/checkout-sessions/{token}/consume/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(consume_resp.status_code, 200)
+        wallet_after_consume = Wallet.objects.get(user=self.customer).balance
+        self.assertEqual(wallet_before - wallet_after_consume, create_resp.data["amount"])
+        self.assertEqual(
+            WalletTransaction.objects.filter(
+                wallet__user=self.customer,
+                transaction_type=WalletTransaction.Type.PURCHASE,
+                order_id=consume_resp.data["order_id"],
+            ).count(),
+            1,
+        )
+
+    def test_order_api_exposes_checkout_session_timeline_fields(self):
+        create_resp = self._create_session()
+        token = create_resp.data["token"]
+        session = CheckoutSession.objects.get(token=token)
+
+        self.client.force_authenticate(self.cashier)
+        consume_resp = self.client.post(
+            f"/api/v1/businesses/{self.business.id}/checkout-sessions/{token}/consume/",
+            {},
+            format="json",
+        )
+        self.assertEqual(consume_resp.status_code, 200)
+
+        self.client.force_authenticate(self.customer)
+        order_resp = self.client.get(f"/api/v1/orders/{consume_resp.data['order_id']}/")
+        self.assertEqual(order_resp.status_code, 200)
+        self.assertEqual(order_resp.data["checkout_session_created_at"], session.created_at)
+        self.assertEqual(order_resp.data["checkout_session_expires_at"], session.expires_at)
+        self.assertIsNotNone(order_resp.data["checkout_session_consumed_at"])
+        self.assertEqual(order_resp.data["source"]["checkout_session_created_at"], order_resp.data["checkout_session_created_at"])
+
+    def test_create_checkout_session_rejects_insufficient_wallet_balance(self):
+        poor_user = create_user(username="poor-create")
+        enable_push_device(user=poor_user)
+        CartService.add_item(user=poor_user, menu_item=self.menu_item, quantity=1)
+        self.client.force_authenticate(poor_user)
+
+        resp = self.client.post(
+            "/api/v1/checkout-sessions/",
+            {},
+            format="json",
+            HTTP_IDEMPOTENCY_KEY="checkout-create-insufficient-wallet",
+        )
+
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.data["error"]["code"], "checkout_session_invalid")
+        self.assertIn("Insufficient", str(resp.data["error"]["message"]))
 
     def test_anonymous_user_cannot_create_checkout_session(self):
         resp = self.client.post(
@@ -184,6 +273,44 @@ class CheckoutApiTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data["token"], token)
 
+    def test_checkout_session_list_returns_only_own_qr_sessions(self):
+        own_token = self._create_session().data["token"]
+        other_user = create_user(username="qr-list-other")
+        enable_push_device(user=other_user)
+        seed_wallet(user=other_user, amount=200000)
+        CartService.add_item(user=other_user, menu_item=self.menu_item, quantity=1)
+        self.client.force_authenticate(other_user)
+        other_token = self.client.post(
+            "/api/v1/checkout-sessions/",
+            {},
+            format="json",
+            HTTP_IDEMPOTENCY_KEY="checkout-list-other",
+        ).data["token"]
+
+        self.client.force_authenticate(self.customer)
+        resp = self.client.get("/api/v1/checkout-sessions/")
+
+        self.assertEqual(resp.status_code, 200)
+        tokens = [item["token"] for item in resp.data["results"]]
+        self.assertIn(own_token, tokens)
+        self.assertNotIn(other_token, tokens)
+
+    def test_checkout_session_list_filters_active_and_expired(self):
+        active_token = self._create_session().data["token"]
+        expired_session = self._create_manual_cart_backed_session(user=self.customer, expires_at=expired_time())
+
+        self.client.force_authenticate(self.customer)
+        active_resp = self.client.get("/api/v1/checkout-sessions/?status=active")
+        expired_resp = self.client.get("/api/v1/checkout-sessions/?status=expired")
+
+        self.assertEqual(active_resp.status_code, 200)
+        self.assertEqual(expired_resp.status_code, 200)
+        self.assertIn(active_token, [item["token"] for item in active_resp.data["results"]])
+        self.assertNotIn(expired_session.token, [item["token"] for item in active_resp.data["results"]])
+        expired_items = {item["token"]: item for item in expired_resp.data["results"]}
+        self.assertIn(expired_session.token, expired_items)
+        self.assertEqual(expired_items[expired_session.token]["status"], CheckoutSession.Status.EXPIRED)
+
     def test_expired_pending_checkout_restores_cart_as_active(self):
         create_resp = self._create_session()
         session = CheckoutSession.objects.get(token=create_resp.data["token"])
@@ -251,6 +378,9 @@ class CheckoutApiTests(TestCase):
         self.assertEqual(resp.data["status"], "CONSUMED")
         order = Order.objects.get(id=resp.data["order_id"])
         self.assertEqual(order.business_id, self.business.id)
+        self.assertEqual(order.status, Order.Status.USED)
+        self.assertIsNotNone(order.paid_at)
+        self.assertIsNotNone(order.used_at)
         self.assertEqual(order.subtotal_amount, self.menu_item.price_amount)
         self.assertEqual(order.total_charged_amount, self.menu_item.price_amount + 1000)
         self.assertEqual(order.order_items.count(), 1)
@@ -284,8 +414,8 @@ class CheckoutApiTests(TestCase):
         self.assertEqual(first.status_code, 200)
         second = self.client.post(f"/api/v1/businesses/{self.business.id}/checkout-sessions/{token}/consume/", {}, format="json")
         self.assertEqual(second.status_code, 409)
-        self.assertEqual(second.data["code"], "checkout_session_already_consumed")
-        self.assertEqual(second.data["order_id"], first.data["order_id"])
+        self.assertEqual(second.data["error"]["code"], "checkout_session_already_consumed")
+        self.assertEqual(second.data["error"]["details"]["order_id"], first.data["order_id"])
 
     def test_wrong_business_blocked(self):
         token = self._create_session().data["token"]
@@ -359,9 +489,10 @@ class CheckoutApiTests(TestCase):
         self.assertEqual(earning.platform_fee_amount, 1000)
         self.assertEqual(earning.net_amount, order.subtotal_amount - 1000)
 
-    def test_create_requires_active_push_device(self):
+    def test_create_without_push_device_still_succeeds(self):
         customer_no_device = create_user(username="customer-no-device")
         seed_wallet(user=customer_no_device, amount=50000)
+        CartService.add_item(user=customer_no_device, menu_item=self.menu_item, quantity=1)
 
         self.client.force_authenticate(customer_no_device)
         resp = self.client.post(
@@ -370,7 +501,7 @@ class CheckoutApiTests(TestCase):
             format="json",
             HTTP_IDEMPOTENCY_KEY="checkout-push-device-required",
         )
-        self.assertEqual(resp.status_code, 403)
+        self.assertEqual(resp.status_code, 201)
 
     def test_marketplace_hidden_business_cannot_create_checkout_session(self):
         self.business.marketplace_is_visible = False

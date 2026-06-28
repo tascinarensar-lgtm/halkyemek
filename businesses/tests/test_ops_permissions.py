@@ -16,7 +16,7 @@ class OpsPermissionTests(TestCase):
         self.business = BusinessProfile.objects.create(
             contact_user=self.customer,
             business_name="Biz",
-            category="Food",
+            category="Burger",
             adress="Adres",
             district="BEYLIKDUZU",
             is_active=True,
@@ -36,6 +36,105 @@ class OpsPermissionTests(TestCase):
         self.assertIn("count", response.data["data"])
         self.assertIn("results", response.data["data"])
 
+    def test_non_admin_cannot_create_ops_business(self):
+        self.client.force_authenticate(self.customer)
+        response = self.client.post(
+            "/api/v1/ops/businesses/",
+            {"business_name": "Yeni Lokanta", "category": "Döner"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_admin_can_create_ops_business_with_owner(self):
+        owner = User.objects.create_user(username="new-owner", password="pass", role=User.Role.CUSTOMER)
+        self.client.force_authenticate(self.admin)
+        response = self.client.post(
+            "/api/v1/ops/businesses/",
+            {
+                "business_name": "Yeni Lokanta",
+                "category": "Döner",
+                "address_line": "Beylikdüzü, İstanbul",
+                "latitude": "41.001000",
+                "longitude": "28.641000",
+                "owner_user_id": owner.id,
+                "owner_role": BusinessMember.Role.OWNER,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        business = BusinessProfile.objects.get(id=response.data["data"]["id"])
+        self.assertEqual(business.business_name, "Yeni Lokanta")
+        self.assertEqual(business.address_line, "Beylikdüzü, İstanbul")
+        self.assertTrue(business.is_active)
+        self.assertTrue(business.is_approved)
+        self.assertTrue(business.is_listed)
+        membership = BusinessMember.objects.get(business=business, user=owner)
+        self.assertEqual(membership.role, BusinessMember.Role.OWNER)
+        self.assertEqual(membership.granted_by, self.admin)
+
+    def test_admin_cannot_create_ops_business_with_unsupported_category(self):
+        self.client.force_authenticate(self.admin)
+        response = self.client.post(
+            "/api/v1/ops/businesses/",
+            {
+                "business_name": "Eski Kategori",
+                "category": "Ev Yemekleri",
+                "address_line": "Beylikdüzü, İstanbul",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_admin_can_create_halktasarruf_business_with_halktasarruf_category(self):
+        self.client.force_authenticate(self.admin)
+        response = self.client.post(
+            "/api/v1/ops/businesses/",
+            {
+                "business_name": "Tasarruf Fırını",
+                "category": "Fırın & Pastane",
+                "supports_halkyemek": False,
+                "supports_halktasarruf": True,
+                "address_line": "Beylikdüzü, İstanbul",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        business = BusinessProfile.objects.get(id=response.data["data"]["id"])
+        self.assertEqual(business.category, "Fırın & Pastane")
+        self.assertFalse(business.supports_halkyemek)
+        self.assertTrue(business.supports_halktasarruf)
+
+    def test_ops_business_create_validates_location_pair(self):
+        self.client.force_authenticate(self.admin)
+        response = self.client.post(
+            "/api/v1/ops/businesses/",
+            {
+                "business_name": "Eksik Konum",
+                "category": "Burger",
+                "latitude": "41.001000",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_ops_business_create_rounds_high_precision_coordinates(self):
+        self.client.force_authenticate(self.admin)
+        response = self.client.post(
+            "/api/v1/ops/businesses/",
+            {
+                "business_name": "Hassas Konum",
+                "category": "Burger",
+                "address_line": "Beylikdüzü, İstanbul",
+                "latitude": "41.001234567",
+                "longitude": "28.641987654",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        business = BusinessProfile.objects.get(id=response.data["data"]["id"])
+        self.assertEqual(str(business.latitude), "41.001235")
+        self.assertEqual(str(business.longitude), "28.641988")
+
     def test_non_admin_cannot_grant_business_membership(self):
         self.client.force_authenticate(self.customer)
         response = self.client.post(
@@ -54,6 +153,25 @@ class OpsPermissionTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         membership = BusinessMember.objects.get(business=self.business, user=self.cashier)
+        self.assertEqual(membership.role, BusinessMember.Role.CASHIER)
+        self.assertEqual(membership.granted_by, self.admin)
+        self.assertTrue(membership.is_active)
+
+    def test_admin_can_grant_business_membership_by_email(self):
+        email_user = User.objects.create_user(
+            username="email-cashier",
+            email="cashier@example.com",
+            password="pass",
+            role=User.Role.CUSTOMER,
+        )
+        self.client.force_authenticate(self.admin)
+        response = self.client.post(
+            f"/api/v1/ops/businesses/{self.business.id}/memberships/",
+            {"email": "CASHIER@example.com", "role": BusinessMember.Role.CASHIER},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        membership = BusinessMember.objects.get(business=self.business, user=email_user)
         self.assertEqual(membership.role, BusinessMember.Role.CASHIER)
         self.assertEqual(membership.granted_by, self.admin)
         self.assertTrue(membership.is_active)

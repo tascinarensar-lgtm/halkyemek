@@ -5,7 +5,6 @@ from drf_spectacular.utils import OpenApiExample, extend_schema
 
 from common.openapi import ApiErrorEnvelopeSerializer
 from common.pagination import DefaultPagination
-from notifications.permissions import HasActivePushDevice
 from wallets.models import PendingWalletTransaction, WalletTransaction
 from wallets.services import WalletService
 
@@ -29,7 +28,7 @@ class PendingWalletTransactionQuerySerializer(serializers.Serializer):
 
 class WalletDetailAPIView(RetrieveAPIView):
     serializer_class = WalletSerializer
-    permission_classes = [IsAuthenticated, HasActivePushDevice]
+    permission_classes = [IsAuthenticated]
 
     @extend_schema(
         operation_id="wallet_detail",
@@ -46,7 +45,7 @@ class WalletDetailAPIView(RetrieveAPIView):
 
 class WalletTransactionListAPIView(ListAPIView):
     serializer_class = WalletTransactionSerializer
-    permission_classes = [IsAuthenticated, HasActivePushDevice]
+    permission_classes = [IsAuthenticated]
     pagination_class = DefaultPagination
     queryset = WalletTransaction.objects.none()
 
@@ -81,7 +80,7 @@ class WalletTransactionListAPIView(ListAPIView):
 
 class PendingWalletTransactionListAPIView(ListAPIView):
     serializer_class = PendingWalletTransactionSerializer
-    permission_classes = [IsAuthenticated, HasActivePushDevice]
+    permission_classes = [IsAuthenticated]
     pagination_class = DefaultPagination
     queryset = PendingWalletTransaction.objects.none()
 

@@ -13,8 +13,8 @@ class NotificationGateRedTeamTests(TestCase):
         self.client.force_authenticate(user=self.user)
         self.business = create_business(name="Biz")
         self.category = create_category(business=self.business, name="Main")
-        self.menu_item = create_menu_item(business=self.business, category=self.category, price_amount=500)
-        seed_wallet(user=self.user, amount=2000)
+        self.menu_item = create_menu_item(business=self.business, category=self.category, price_amount=2000)
+        seed_wallet(user=self.user, amount=5000)
         CartService.add_item(user=self.user, menu_item=self.menu_item, quantity=1)
 
     def test_notification_readiness_reports_false_without_active_permitted_device(self):
@@ -22,18 +22,16 @@ class NotificationGateRedTeamTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data["notification_ready"], False)
 
-    def test_checkout_session_creation_is_blocked_without_push_device(self):
+    def test_checkout_session_creation_is_not_blocked_without_push_device(self):
         resp = self.client.post(
             "/api/v1/checkout-sessions/",
             {},
             format="json",
             HTTP_IDEMPOTENCY_KEY="notif-gate-create",
         )
-        self.assertEqual(resp.status_code, 403)
-        self.assertEqual(resp.data["ok"], False)
-        self.assertEqual(resp.data["error"]["code"], "PermissionDenied")
+        self.assertEqual(resp.status_code, 201)
 
-    def test_checkout_session_creation_succeeds_with_active_permitted_device(self):
+    def test_checkout_session_creation_still_succeeds_with_active_permitted_device(self):
         Device.objects.create(
             user=self.user,
             platform=Device.Platform.ANDROID,

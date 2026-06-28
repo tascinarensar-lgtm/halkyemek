@@ -52,6 +52,12 @@ class Notification(models.Model):
         PAYOUT_CONFIRMED = "PAYOUT_CONFIRMED", "Payout Confirmed"
         BALANCE_LOW = "BALANCE_LOW", "Balance Low"
         SYSTEM_BROADCAST = "SYSTEM_BROADCAST", "System Broadcast"
+        USER_REMINDER = "USER_REMINDER", "User Reminder"
+        EMAIL_BROADCAST = "EMAIL_BROADCAST", "Email Broadcast"
+        SURPRISE_DEAL_RESERVED = "SURPRISE_DEAL_RESERVED", "Surprise Deal Reserved"
+        SURPRISE_DEAL_CONSUMED = "SURPRISE_DEAL_CONSUMED", "Surprise Deal Consumed"
+        SURPRISE_DEAL_EXPIRED = "SURPRISE_DEAL_EXPIRED", "Surprise Deal Expired"
+        SURPRISE_DEAL_CLOSED = "SURPRISE_DEAL_CLOSED", "Surprise Deal Closed"
 
     class Status(models.TextChoices):
         PENDING = "PENDING", "Pending"
@@ -109,4 +115,27 @@ class DeliveryAttempt(models.Model): # log
         indexes = [
             models.Index(fields=["status", "retry_at"], name="idx_delivery_status_retry"),
             models.Index(fields=["notification", "device"], name="idx_delivery_notif_device"),
+        ]
+
+
+class EmailDeliveryAttempt(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "PENDING", "Pending"
+        SENT = "SENT", "Sent"
+        FAILED = "FAILED", "Failed"
+
+    notification = models.ForeignKey(Notification, on_delete=models.CASCADE, related_name="email_attempts")
+    email_to = models.EmailField()
+    provider = models.CharField(max_length=32, default="EMAIL")
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.PENDING)
+    error = models.TextField(blank=True, default="")
+    retry_count = models.PositiveIntegerField(default=0)
+    retry_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["status", "retry_at"], name="idx_email_delivery_retry"),
+            models.Index(fields=["notification", "email_to"], name="idx_email_delivery_notif"),
         ]

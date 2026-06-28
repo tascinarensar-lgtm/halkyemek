@@ -1,10 +1,10 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
-import { usePathname, useParams, useRouter, useSearchParams } from "next/navigation";
+import { useMemo, useState } from "react";
+import { usePathname, useParams, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { BadgePercent, CalendarRange, Clock3, Coins, Receipt, SearchCheck, ShieldCheck, Wallet } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Clock3, ReceiptText, ShieldCheck, WalletCards, X } from "lucide-react";
 
 import { BusinessPanelShell } from "@/components/business/business-panel-shell";
 import { PaginationControls } from "@/components/shared/pagination-controls";
@@ -14,9 +14,9 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { LoadingSkeleton } from "@/components/ui/loading-skeleton";
 import { PageContainer } from "@/components/ui/page-container";
-import { SectionHeader } from "@/components/ui/section-header";
 import { StatusChip } from "@/components/ui/status-chip";
 import { getBusinessConsumeHistory } from "@/features/business-operations/api";
+import type { BusinessConsumeHistoryItem } from "@/features/business-operations/types";
 import { buildUpdatedSearchParams } from "@/features/discovery/params";
 import { getApiErrorMessage, getApiRequestId } from "@/lib/api/errors";
 import { formatDateTime } from "@/lib/utils/format";
@@ -45,81 +45,113 @@ function getOrderLabel(status: string) {
     case "EXPIRED":
       return "Süresi doldu";
     default:
-      return status || "Durum bilgisi yok";
+      return status || "Durum yok";
   }
 }
 
-function getEarningLabel(status: string | null | undefined) {
-  switch (status) {
-    case "PENDING":
-      return "Hakediş beklemede";
-    case "ELIGIBLE":
-      return "Ödemeye uygun";
-    case "IN_PAYOUT":
-      return "Ödeme sürecine alındı";
-    case "PAID":
-      return "Hakediş ödendi";
-    case "FAILED":
-      return "Ödeme sürecinde sorun var";
-    case "REVERSED":
-      return "Hakediş ters kayıtla kapandı";
-    default:
-      return "Hakediş kaydı hazırlanıyor";
-  }
+function getDisplayAmount(item: BusinessConsumeHistoryItem) {
+  return item.order.total_charged_amount || item.total_payable_amount || item.amount || 0;
+}
+
+function HistoryDetailCard({ item, onClose }: { item: BusinessConsumeHistoryItem; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/55 px-0 py-0 backdrop-blur-sm sm:items-center sm:px-4 sm:py-8" onClick={onClose}>
+      <section
+        className="hy-mobile-sheet w-full max-w-2xl overflow-hidden rounded-t-[32px] bg-white shadow-[0_34px_110px_rgba(15,23,42,0.30)] ring-1 ring-white/50 sm:rounded-[32px]"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="relative overflow-hidden bg-zinc-950 p-5 text-white sm:p-7">
+          <div className="pointer-events-none absolute -right-16 -top-20 h-48 w-48 rounded-full bg-[#f40046]/30 blur-3xl" />
+          <button
+            type="button"
+            onClick={onClose}
+            className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-full bg-white text-zinc-950 shadow-lg transition hover:scale-105 hover:bg-rose-50"
+            aria-label="Kaydı kapat"
+          >
+            <X className="h-5 w-5" />
+          </button>
+
+          <div className="relative z-10 inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] text-white/75 ring-1 ring-white/10">
+            <ReceiptText className="h-3.5 w-3.5 text-[#ff7a9f]" />
+            İşlem kaydı
+          </div>
+          <h2 className="relative z-10 mt-5 pr-12 text-2xl font-semibold tracking-[-0.05em] sm:text-4xl">Sipariş #{item.order.id ?? item.checkout_session_id}</h2>
+          <p className="relative z-10 mt-2 text-sm leading-6 text-white/65">QR/kasa doğrulaması ve tahsilat özeti.</p>
+        </div>
+
+        <div className="grid gap-3 p-4 sm:grid-cols-2 sm:p-6">
+          <div className="rounded-[22px] border border-zinc-100 bg-zinc-50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">Durum</p>
+            <div className="mt-2">
+              <StatusChip label={getOrderLabel(item.order.status)} tone={getOrderTone(item.order.status)} />
+            </div>
+          </div>
+          <div className="rounded-[22px] border border-zinc-100 bg-zinc-950 p-4 text-white">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/50">Tahsilat</p>
+            <p className="mt-2 text-2xl font-semibold tracking-[-0.04em]">
+              <AmountText amount={getDisplayAmount(item)} />
+            </p>
+          </div>
+          <div className="rounded-[22px] border border-zinc-100 bg-zinc-50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">Ürün adedi</p>
+            <p className="mt-2 text-lg font-semibold text-zinc-950">{item.item_count}</p>
+          </div>
+          <div className="rounded-[22px] border border-zinc-100 bg-zinc-50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">Kasa kodu</p>
+            <p className="mt-2 break-all font-semibold tracking-[0.12em] text-zinc-950">{item.checkout_session_cashier_code || "-"}</p>
+          </div>
+          <div className="rounded-[22px] border border-zinc-100 bg-zinc-50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">Tahsilat zamanı</p>
+            <p className="mt-2 font-semibold text-zinc-950">{formatDateTime(item.order.paid_at)}</p>
+          </div>
+          <div className="rounded-[22px] border border-zinc-100 bg-zinc-50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">Teslim zamanı</p>
+            <p className="mt-2 font-semibold text-zinc-950">{formatDateTime(item.order.used_at ?? item.consumed_at)}</p>
+          </div>
+          <div className="rounded-[22px] border border-zinc-100 bg-zinc-50 p-4 sm:col-span-2">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">QR oturum numarası</p>
+            <p className="mt-2 break-all font-semibold text-zinc-950">#{item.checkout_session_id}</p>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
 }
 
 export default function BusinessConsumeHistoryPage() {
   const params = useParams<{ businessId: string }>();
   const businessId = Number(params.businessId);
   const searchParams = useSearchParams();
-  const router = useRouter();
   const pathname = usePathname();
+  const [selectedItem, setSelectedItem] = useState<BusinessConsumeHistoryItem | null>(null);
 
   const hasValidBusinessId = Number.isFinite(businessId) && businessId > 0;
   const pageParam = Number(searchParams.get("page") || "1");
   const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1;
 
-  const filters = {
-    consumed_after: searchParams.get("consumed_after") || undefined,
-    consumed_before: searchParams.get("consumed_before") || undefined,
-    page,
-  };
-
   const historyQuery = useQuery({
-    queryKey: ["business-operations", businessId, "consume-history", filters],
-    queryFn: () => getBusinessConsumeHistory(businessId, filters),
+    queryKey: ["business-operations", businessId, "consume-history", { page }],
+    queryFn: () => getBusinessConsumeHistory(businessId, { page }),
     enabled: hasValidBusinessId,
   });
 
+  const rows = useMemo(() => historyQuery.data?.results ?? [], [historyQuery.data?.results]);
+
   const summary = useMemo(() => {
-    const rows = historyQuery.data?.results ?? [];
     return rows.reduce(
       (accumulator, item) => {
         accumulator.count += 1;
-        accumulator.totalCharged += item.order.total_charged_amount || item.total_payable_amount || 0;
-        accumulator.totalNet += item.order.business_net_amount || 0;
-        accumulator.totalPlatformFee += item.order.business_fee_amount || 0;
-        accumulator.totalCustomerFee += item.order.customer_fee_amount || 0;
+        accumulator.totalCharged += getDisplayAmount(item);
+        accumulator.totalItems += item.item_count || 0;
         return accumulator;
       },
       {
         count: 0,
         totalCharged: 0,
-        totalNet: 0,
-        totalPlatformFee: 0,
-        totalCustomerFee: 0,
+        totalItems: 0,
       },
     );
-  }, [historyQuery.data]);
-
-  function updateFilters(formData: FormData) {
-    const next = buildUpdatedSearchParams(searchParams, {
-      consumed_after: String(formData.get("consumed_after") || ""),
-      consumed_before: String(formData.get("consumed_before") || ""),
-      page: 1,
-    });
-    router.push(`${pathname}?${next.toString()}`);
-  }
+  }, [rows]);
 
   function buildPageHref(nextPage: number) {
     const next = buildUpdatedSearchParams(searchParams, { page: nextPage });
@@ -131,283 +163,163 @@ export default function BusinessConsumeHistoryPage() {
     <PageContainer>
       <BusinessPanelShell businessId={hasValidBusinessId ? businessId : null}>
         <div className="space-y-6">
-          <SectionHeader
-            title="İşlem geçmişi"
-            description="Kasada doğrulanmış siparişleri, toplam tahsilatı, platform kesintisini ve işletmeye yansıyacak net tutarı tek ekranda takip edebilirsin."
-          />
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#f40046]">İşletme paneli</p>
+              <h1 className="mt-2 text-2xl font-semibold tracking-tight text-zinc-950 sm:text-4xl">İşlem geçmişi</h1>
+            </div>
+            {hasValidBusinessId ? (
+              <Link
+                href={`/isletme/${businessId}`}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-zinc-200 bg-white px-4 py-2.5 text-sm font-semibold text-zinc-800 shadow-sm transition hover:border-zinc-300 hover:bg-zinc-50 sm:w-fit"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Panele dön
+              </Link>
+            ) : null}
+          </div>
 
           {!hasValidBusinessId ? (
             <ErrorState title="Geçersiz işletme" description="URL içindeki işletme bilgisi okunamadı. İşletme paneline güvenli giriş yapıp tekrar dene." />
           ) : null}
 
           {hasValidBusinessId ? (
-            <>
-              <div className="grid gap-4 xl:grid-cols-[1.08fr_0.92fr]">
-                <Card className="overflow-hidden border-stone-200 bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.12),_transparent_34%),linear-gradient(135deg,_rgba(255,255,255,0.98),_rgba(250,250,249,0.95))]">
-                  <CardContent className="space-y-5 p-6">
-                    <div className="flex items-start gap-3">
-                      <div className="rounded-2xl bg-zinc-950 p-2.5 text-white">
-                        <Receipt className="h-4 w-4" />
-                      </div>
-                      <div>
-                        <h2 className="text-xl font-semibold tracking-tight text-zinc-950">Tamamlanan doğrulama kayıtları</h2>
-                        <p className="mt-2 text-sm leading-6 text-zinc-600">
-                          Bu ekran, kasada doğrulanmış tüm siparişleri listeler. Hangi siparişin ne zaman işlendiğini, işletmeye ne kadar net tutar
-                          yansıdığını ve ödeme sürecindeki hakediş durumunu buradan izlersin.
-                        </p>
-                      </div>
+            <section className="overflow-hidden rounded-[2rem] border border-zinc-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.08)]">
+              <div className="bg-zinc-950 px-5 py-5 text-white sm:px-7 sm:py-6">
+                <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="max-w-2xl">
+                    <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-white/80">
+                      <ShieldCheck className="h-3.5 w-3.5" />
+                      Güvenli kayıt
                     </div>
+                    <h2 className="mt-4 text-xl font-semibold tracking-tight sm:text-3xl">Kasada tamamlanan işlemler</h2>
+                    <p className="mt-2 max-w-2xl text-sm leading-6 text-white/65">
+                      QR veya kasa kodu ile tamamlanan siparişleri ve tahsilat toplamını buradan takip edebilirsin.
+                    </p>
+                  </div>
 
-                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                      <div className="rounded-2xl border border-white/80 bg-white/85 p-4 shadow-sm">
-                        <div className="text-xs font-medium uppercase tracking-[0.16em] text-zinc-500">Görünen kayıt</div>
-                        <div className="mt-2 text-2xl font-semibold text-zinc-950">{summary.count}</div>
-                      </div>
-                      <div className="rounded-2xl border border-white/80 bg-white/85 p-4 shadow-sm">
-                        <div className="text-xs font-medium uppercase tracking-[0.16em] text-zinc-500">Toplam tahsilat</div>
-                        <div className="mt-2 text-2xl font-semibold text-zinc-950">
-                          <AmountText amount={summary.totalCharged} />
-                        </div>
-                      </div>
-                      <div className="rounded-2xl border border-white/80 bg-white/85 p-4 shadow-sm">
-                        <div className="text-xs font-medium uppercase tracking-[0.16em] text-zinc-500">Net işletme tutarı</div>
-                        <div className="mt-2 text-2xl font-semibold text-zinc-950">
-                          <AmountText amount={summary.totalNet} />
-                        </div>
-                      </div>
-                      <div className="rounded-2xl border border-white/80 bg-white/85 p-4 shadow-sm">
-                        <div className="text-xs font-medium uppercase tracking-[0.16em] text-zinc-500">Toplam platform kesintisi</div>
-                        <div className="mt-2 text-2xl font-semibold text-zinc-950">
-                          <AmountText amount={summary.totalPlatformFee} />
-                        </div>
-                      </div>
+                  <div className="grid grid-cols-3 gap-2 lg:min-w-[430px]">
+                    <div className="rounded-2xl bg-white px-4 py-3 text-zinc-950">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500">Kayıt</p>
+                      <p className="mt-1 text-xl font-semibold">{summary.count}</p>
                     </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="border-stone-200 bg-zinc-950 text-white">
-                  <CardContent className="space-y-4 p-6">
-                    <div className="flex items-center gap-2 text-sm font-medium text-zinc-200">
-                      <ShieldCheck className="h-4 w-4" /> Bu ekran neyi gösterir?
+                    <div className="rounded-2xl bg-white px-4 py-3 text-zinc-950">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500">Ürün</p>
+                      <p className="mt-1 text-xl font-semibold">{summary.totalItems}</p>
                     </div>
-                    <div className="rounded-2xl bg-white/5 p-4 text-sm leading-6 text-zinc-200">
-                      İşlem geçmişi, yalnızca kasada doğrulanmış siparişleri gösterir. Buradaki her kayıt için sipariş tutarı, müşteri ücreti, platform
-                      kesintisi, net işletme alacağı ve hakediş aşaması birlikte görülür.
+                    <div className="rounded-2xl bg-white px-4 py-3 text-zinc-950">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500">Tahsilat</p>
+                      <p className="mt-1 text-lg font-semibold">
+                        <AmountText amount={summary.totalCharged} />
+                      </p>
                     </div>
-                    <div className="space-y-3 text-sm text-zinc-200">
-                      <div className="flex items-center justify-between rounded-2xl bg-white/5 px-4 py-3">
-                        <span>Müşteri ücretleri toplamı</span>
-                        <AmountText amount={summary.totalCustomerFee} />
-                      </div>
-                      <div className="flex items-center justify-between rounded-2xl bg-white/5 px-4 py-3">
-                        <span>Filtre durumu</span>
-                        <span className="font-medium text-white">
-                          {filters.consumed_after || filters.consumed_before ? "Tarih filtresi aktif" : "Tüm kayıtlar"}
-                        </span>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
+                  </div>
+                </div>
               </div>
 
-              <Card className="border-stone-200 shadow-sm">
-                <CardContent className="p-6">
-                  <form
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      updateFilters(new FormData(event.currentTarget));
-                    }}
-                    className="grid gap-4 md:grid-cols-[1fr_1fr_auto]"
-                  >
-                    <label className="space-y-2">
-                      <span className="inline-flex items-center gap-2 text-sm font-medium text-zinc-800">
-                        <CalendarRange className="h-4 w-4" />
-                        Başlangıç zamanı
-                      </span>
-                      <input
-                        name="consumed_after"
-                        type="datetime-local"
-                        defaultValue={filters.consumed_after || ""}
-                        className="w-full rounded-xl border border-zinc-300 px-4 py-3 text-sm text-zinc-900 outline-none transition focus:border-zinc-950"
-                      />
-                    </label>
-                    <label className="space-y-2">
-                      <span className="inline-flex items-center gap-2 text-sm font-medium text-zinc-800">
-                        <Clock3 className="h-4 w-4" />
-                        Bitiş zamanı
-                      </span>
-                      <input
-                        name="consumed_before"
-                        type="datetime-local"
-                        defaultValue={filters.consumed_before || ""}
-                        className="w-full rounded-xl border border-zinc-300 px-4 py-3 text-sm text-zinc-900 outline-none transition focus:border-zinc-950"
-                      />
-                    </label>
-                    <div className="flex flex-col justify-end gap-3 md:flex-row">
-                      <button type="submit" className="inline-flex items-center justify-center gap-2 rounded-xl bg-zinc-950 px-4 py-3 text-sm font-medium text-white hover:bg-zinc-800">
-                        <SearchCheck className="h-4 w-4" />
-                        Listeyi güncelle
-                      </button>
-                      <Link href={pathname} className="inline-flex items-center justify-center rounded-xl bg-zinc-100 px-4 py-3 text-sm font-medium text-zinc-900 hover:bg-zinc-200">
-                        Filtreleri temizle
-                      </Link>
-                    </div>
-                  </form>
-                </CardContent>
-              </Card>
-            </>
-          ) : null}
+              <CardContent className="p-0">
+                {historyQuery.isPending ? (
+                  <div className="p-5 sm:p-7">
+                    <LoadingSkeleton />
+                  </div>
+                ) : null}
 
-          {hasValidBusinessId && historyQuery.isPending ? <LoadingSkeleton /> : null}
-          {hasValidBusinessId && historyQuery.isError ? (
-            <ErrorState
-              title="İşlem geçmişi yüklenemedi"
-              description={`${getApiErrorMessage(historyQuery.error)}${getApiRequestId(historyQuery.error) ? ` · request_id: ${getApiRequestId(historyQuery.error)}` : ""}`}
-            />
-          ) : null}
+                {historyQuery.isError ? (
+                  <div className="p-5 sm:p-7">
+                    <ErrorState
+                      title="İşlem geçmişi yüklenemedi"
+                      description={`${getApiErrorMessage(historyQuery.error)}${getApiRequestId(historyQuery.error) ? ` · request_id: ${getApiRequestId(historyQuery.error)}` : ""}`}
+                    />
+                  </div>
+                ) : null}
 
-          {hasValidBusinessId && historyQuery.data && historyQuery.data.results.length === 0 ? (
-            <div className="space-y-4">
-              <EmptyState
-                title="Bu aralıkta kayıt görünmüyor"
-                description="Kasada doğrulanmış siparişler burada listelenir. Henüz işlem yapılmadıysa ya da seçtiğin tarih aralığında kayıt yoksa bu alan boş görünür."
-              />
-              <Card className="border-stone-200">
-                <CardContent className="space-y-3 p-6 text-sm leading-6 text-zinc-600">
-                  <p className="font-medium text-zinc-900">Ne zaman dolmaya başlar?</p>
-                  <p>
-                    Müşteri QR kodu kasada doğrulanıp teslim onayı verildiğinde kayıt bu ekrana düşer. İstersen işletme panelindeki QR okutma alanından
-                    yeni bir deneme yaparak akışı test edebilirsin.
-                  </p>
-                </CardContent>
-              </Card>
-            </div>
-          ) : null}
+                {historyQuery.data && rows.length === 0 ? (
+                  <div className="p-5 sm:p-7">
+                    <EmptyState title="Henüz işlem yok" description="QR kod kasada doğrulandığında tamamlanan işlemler burada görünür." />
+                  </div>
+                ) : null}
 
-          {historyQuery.data?.results.length ? (
-            <div className="space-y-4">
-              {historyQuery.data.results.map((item) => (
-                <Card key={item.checkout_session_id} className="border-stone-200 shadow-sm">
-                  <CardContent className="space-y-5 p-6">
-                    <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                      <div className="space-y-3">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h2 className="text-lg font-semibold text-zinc-950">İşlem #{item.checkout_session_id}</h2>
-                          <StatusChip label={getOrderLabel(item.order.status)} tone={getOrderTone(item.order.status)} />
-                          <span className="rounded-full bg-zinc-100 px-3 py-1 text-xs font-medium text-zinc-600">
-                            Kasa kodu: {item.checkout_session_cashier_code || "-"}
-                          </span>
-                        </div>
-                        <p className="text-sm leading-6 text-zinc-600">
-                          İşlem zamanı {formatDateTime(item.consumed_at)}. Kasada onaylayan kullanıcı: {item.consumed_by_user_id ?? "-"} · Müşteri hesabı:{" "}
-                          {item.customer_user_id ?? "-"}.
-                        </p>
-                      </div>
+                {rows.length ? (
+                  <div className="divide-y divide-zinc-100">
+                    {rows.map((item) => (
+                      <article key={item.checkout_session_id} className="group p-5 transition hover:bg-zinc-50/70 sm:p-7">
+                        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+                          <div className="min-w-0 space-y-3">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#fff0f5] text-[#f40046]">
+                                <ReceiptText className="h-5 w-5" />
+                              </div>
+                              <div>
+                                <h3 className="text-base font-semibold text-zinc-950 sm:text-lg">İşlem #{item.checkout_session_id}</h3>
+                                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs font-medium text-zinc-500">
+                                  <span>{formatDateTime(item.consumed_at)}</span>
+                                  {item.checkout_session_cashier_code ? <span>· Kasa kodu {item.checkout_session_cashier_code}</span> : null}
+                                  <span>· {item.item_count} ürün</span>
+                                </div>
+                              </div>
+                            </div>
 
-                      <div className="grid gap-3 sm:grid-cols-2 xl:min-w-[360px]">
-                        <div className="rounded-2xl bg-zinc-50 p-4">
-                          <div className="text-xs font-medium uppercase tracking-[0.16em] text-zinc-500">Toplam tahsilat</div>
-                          <div className="mt-2 text-xl font-semibold text-zinc-950">
-                            <AmountText amount={item.order.total_charged_amount || item.total_payable_amount} />
+                            <div className="flex flex-wrap gap-2">
+                              <StatusChip label={getOrderLabel(item.order.status)} tone={getOrderTone(item.order.status)} />
+                              <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-3 py-1 text-xs font-semibold text-zinc-700">
+                                <Clock3 className="h-3.5 w-3.5" />
+                                Tahsilat: {formatDateTime(item.order.paid_at)}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="rounded-2xl border border-zinc-100 bg-white p-4 shadow-sm lg:min-w-[220px]">
+                            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">Tahsilat</p>
+                            <p className="mt-2 text-lg font-semibold text-zinc-950">
+                              <AmountText amount={getDisplayAmount(item)} />
+                            </p>
                           </div>
                         </div>
-                        <div className="rounded-2xl bg-emerald-50 p-4">
-                          <div className="text-xs font-medium uppercase tracking-[0.16em] text-emerald-700">Net işletme tutarı</div>
-                          <div className="mt-2 text-xl font-semibold text-emerald-900">
-                            <AmountText amount={item.order.business_net_amount || item.earning?.net_amount || 0} />
+
+                        <div className="mt-5 flex flex-col gap-3 rounded-2xl bg-zinc-50 px-4 py-3 text-sm text-zinc-600 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="inline-flex items-center gap-2">
+                            <WalletCards className="h-4 w-4 text-zinc-400" />
+                            <span>Sipariş: #{item.order.id}</span>
                           </div>
+                          <button
+                              type="button"
+                              onClick={() => setSelectedItem(item)}
+                              className="inline-flex items-center justify-center rounded-full bg-white px-4 py-2 text-sm font-semibold text-zinc-900 shadow-sm ring-1 ring-zinc-200 transition hover:bg-[#fff0f5] hover:text-[#f40046] hover:ring-[#ffd1df]"
+                            >
+                              Kaydı aç
+                          </button>
                         </div>
-                      </div>
-                    </div>
+                      </article>
+                    ))}
+                  </div>
+                ) : null}
+              </CardContent>
+            </section>
+          ) : null}
 
-                    <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-4">
-                      <div className="rounded-2xl bg-zinc-50 p-4">
-                        <div className="inline-flex items-center gap-2 text-xs font-medium uppercase tracking-[0.16em] text-zinc-500">
-                          <Wallet className="h-3.5 w-3.5" />
-                          Menülerin toplamı
-                        </div>
-                        <div className="mt-2 text-base font-semibold text-zinc-950">
-                          <AmountText amount={item.order.subtotal_amount} />
-                        </div>
-                      </div>
-                      <div className="rounded-2xl bg-zinc-50 p-4">
-                        <div className="inline-flex items-center gap-2 text-xs font-medium uppercase tracking-[0.16em] text-zinc-500">
-                          <Coins className="h-3.5 w-3.5" />
-                          Müşteri ücreti
-                        </div>
-                        <div className="mt-2 text-base font-semibold text-zinc-950">
-                          <AmountText amount={item.order.customer_fee_amount} />
-                        </div>
-                      </div>
-                      <div className="rounded-2xl bg-zinc-50 p-4">
-                        <div className="inline-flex items-center gap-2 text-xs font-medium uppercase tracking-[0.16em] text-zinc-500">
-                          <BadgePercent className="h-3.5 w-3.5" />
-                          Platform kesintisi
-                        </div>
-                        <div className="mt-2 text-base font-semibold text-zinc-950">
-                          <AmountText amount={item.order.business_fee_amount} />
-                        </div>
-                      </div>
-                      <div className="rounded-2xl bg-zinc-50 p-4">
-                        <div className="inline-flex items-center gap-2 text-xs font-medium uppercase tracking-[0.16em] text-zinc-500">
-                          <Receipt className="h-3.5 w-3.5" />
-                          Hakediş durumu
-                        </div>
-                        <div className="mt-2 text-sm font-semibold text-zinc-950">{getEarningLabel(item.earning?.status)}</div>
-                        <p className="mt-1 text-sm text-zinc-500">
-                          Ödemeye esas kalan: <AmountText amount={item.earning?.outstanding_amount ?? item.order.business_net_amount} />
-                        </p>
-                      </div>
-                    </div>
+          {historyQuery.data ? (
+            <PaginationControls page={page} hasPrevious={Boolean(historyQuery.data.previous)} hasNext={Boolean(historyQuery.data.next)} buildHref={buildPageHref} />
+          ) : null}
 
-                    <div className="flex flex-col gap-3 rounded-2xl bg-zinc-50 p-4 text-sm text-zinc-600 lg:flex-row lg:items-center lg:justify-between">
-                      <div className="space-y-1">
-                        <p>Sipariş ödeme zamanı: {formatDateTime(item.order.paid_at)}</p>
-                        <p>Hakedişin uygun olacağı zaman: {formatDateTime(item.earning?.eligible_at ?? null)}</p>
-                      </div>
-                      <div className="space-y-1 lg:text-right">
-                        <p>
-                          Bağlı payout kaydı: {item.earning?.payout?.id ? `#${item.earning.payout.id} · ${item.earning.payout.status}` : "Henüz oluşmadı"}
-                        </p>
-                        <p>Ürün adedi: {item.item_count}</p>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap gap-3">
-                      {item.order.id ? (
-                        <Link href={`/isletme/${businessId}/siparisler/${item.order.id}`} className="rounded-xl bg-zinc-950 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800">
-                          Sipariş detayını aç
-                        </Link>
-                      ) : null}
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-
-              <PaginationControls page={page} hasPrevious={Boolean(historyQuery.data.previous)} hasNext={Boolean(historyQuery.data.next)} buildHref={buildPageHref} />
-
-              <div className="grid gap-4 lg:grid-cols-2">
-                <Card className="border-stone-200">
-                  <CardContent className="space-y-3 p-6 text-sm leading-6 text-zinc-600">
-                    <p className="font-medium text-zinc-900">Bu sayfa ne için kullanılır?</p>
-                    <p>
-                      Gün sonu kontrolü yaparken hangi siparişten ne kadar tahsil edildiğini, hangi tutarın platform kesintisi olduğunu ve işletmeye ne kadar
-                      net bakiye yazıldığını tek ekranda görebilirsin.
-                    </p>
-                  </CardContent>
-                </Card>
-                <Card className="border-stone-200">
-                  <CardContent className="space-y-3 p-6 text-sm leading-6 text-zinc-600">
-                    <p className="font-medium text-zinc-900">Hakediş ve payout ilişkisi</p>
-                    <p>
-                      Bir sipariş doğrulandıktan sonra hakediş kaydı oluşur. Bu kayıt önce bekler, ardından ödemeye uygun hale gelir ve payout sürecine
-                      alındığında buradaki durum alanlarında görünür.
-                    </p>
-                  </CardContent>
-                </Card>
+          <Card className="border-zinc-200 bg-white shadow-sm">
+            <CardContent className="flex flex-col gap-4 p-5 text-sm text-zinc-600 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 rounded-2xl bg-[#fff0f5] p-2 text-[#f40046]">
+                  <CheckCircle2 className="h-4 w-4" />
+                </div>
+                <div>
+                  <p className="font-semibold text-zinc-950">Sade günlük kontrol</p>
+                  <p className="mt-1 leading-6">Tamamlanan QR işlemleri ve tahsilat kayıtları aynı ekranda takip edilir.</p>
+                </div>
               </div>
-            </div>
-          ) : null}
+              {hasValidBusinessId ? (
+                <Link href={`/isletme/${businessId}`} className="rounded-full bg-zinc-950 px-5 py-2.5 text-center text-sm font-semibold text-white transition hover:bg-zinc-800">
+                  Panele dön
+                </Link>
+              ) : null}
+            </CardContent>
+          </Card>
+          {selectedItem ? <HistoryDetailCard item={selectedItem} onClose={() => setSelectedItem(null)} /> : null}
         </div>
       </BusinessPanelShell>
     </PageContainer>

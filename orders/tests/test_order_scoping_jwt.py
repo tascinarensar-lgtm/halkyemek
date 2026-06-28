@@ -12,6 +12,8 @@ class CheckoutSessionScopingTests(TestCase):
         self.customer = create_user(username="scope-customer")
         self.cashier = create_user(username="scope-cashier")
         self.other = create_user(username="scope-other")
+        enable_push_device(user=self.cashier)
+        enable_push_device(user=self.other)
         self.business = create_business(name="Biz")
         add_membership(business=self.business, user=self.cashier, role=BusinessMember.Role.CASHIER)
         self.category = create_category(business=self.business, name="Main")

@@ -1,122 +1,50 @@
 [
   {
     "model": "businesses.marketplacecategory",
-    "pk": 1,
-    "fields": {
-      "district": "BEYLIKDUZU",
-      "slug": "tavuk-doner",
-      "name": "Tavuk Döner",
-      "description": "Uygun fiyatlı tavuk döner ve pratik menü seçenekleri.",
-      "sort_order": 10,
-      "is_active": true,
-      "is_other": false,
-      "created_at": "2026-04-02T00:00:00Z",
-      "updated_at": "2026-04-02T00:00:00Z"
-    }
-  },
-  {
-    "model": "businesses.marketplacecategory",
-    "pk": 2,
-    "fields": {
-      "district": "BEYLIKDUZU",
-      "slug": "et-doner",
-      "name": "Et Döner",
-      "description": "Et döner sevenler için doyurucu ve avantajlı menüler.",
-      "sort_order": 20,
-      "is_active": true,
-      "is_other": false,
-      "created_at": "2026-04-02T00:00:00Z",
-      "updated_at": "2026-04-02T00:00:00Z"
-    }
-  },
-  {
-    "model": "businesses.marketplacecategory",
-    "pk": 3,
     "fields": {
       "district": "BEYLIKDUZU",
       "slug": "burger",
       "name": "Burger",
-      "description": "Klasik ve özel burger menülerini bir araya getiren kategori.",
-      "sort_order": 30,
+      "description": "Burger menülerini tek katalogda toplayan resmi HalkYemek kategorisi.",
+      "sort_order": 10,
       "is_active": true,
-      "is_other": false,
-      "created_at": "2026-04-02T00:00:00Z",
-      "updated_at": "2026-04-02T00:00:00Z"
+      "is_other": false
     }
   },
   {
     "model": "businesses.marketplacecategory",
-    "pk": 4,
     "fields": {
       "district": "BEYLIKDUZU",
       "slug": "pizza",
       "name": "Pizza",
-      "description": "Farklı boy ve içeriklerde pizza seçenekleri.",
-      "sort_order": 40,
+      "description": "Pizza menülerini tek katalogda toplayan resmi HalkYemek kategorisi.",
+      "sort_order": 20,
       "is_active": true,
-      "is_other": false,
-      "created_at": "2026-04-02T00:00:00Z",
-      "updated_at": "2026-04-02T00:00:00Z"
+      "is_other": false
     }
   },
   {
     "model": "businesses.marketplacecategory",
-    "pk": 5,
     "fields": {
       "district": "BEYLIKDUZU",
-      "slug": "pilav-tencere-yemekleri",
-      "name": "Pilav & Tencere Yemekleri",
-      "description": "Pilav, tencere yemekleri ve doyurucu tabaklar.",
-      "sort_order": 50,
+      "slug": "doner",
+      "name": "Döner",
+      "description": "Döner menülerini tek katalogda toplayan resmi HalkYemek kategorisi.",
+      "sort_order": 30,
       "is_active": true,
-      "is_other": false,
-      "created_at": "2026-04-02T00:00:00Z",
-      "updated_at": "2026-04-02T00:00:00Z"
+      "is_other": false
     }
   },
   {
     "model": "businesses.marketplacecategory",
-    "pk": 6,
-    "fields": {
-      "district": "BEYLIKDUZU",
-      "slug": "ev-yemekleri",
-      "name": "Ev Yemekleri",
-      "description": "Esnaf usulü günlük menüler ve ev yemeği seçenekleri.",
-      "sort_order": 60,
-      "is_active": true,
-      "is_other": false,
-      "created_at": "2026-04-02T00:00:00Z",
-      "updated_at": "2026-04-02T00:00:00Z"
-    }
-  },
-  {
-    "model": "businesses.marketplacecategory",
-    "pk": 7,
     "fields": {
       "district": "BEYLIKDUZU",
       "slug": "kebap",
       "name": "Kebap",
-      "description": "Kebap ve ızgara çeşitlerini bir araya getiren kategori.",
-      "sort_order": 70,
+      "description": "Kebap menülerini tek katalogda toplayan resmi HalkYemek kategorisi.",
+      "sort_order": 40,
       "is_active": true,
-      "is_other": false,
-      "created_at": "2026-04-02T00:00:00Z",
-      "updated_at": "2026-04-02T00:00:00Z"
-    }
-  },
-  {
-    "model": "businesses.marketplacecategory",
-    "pk": 8,
-    "fields": {
-      "district": "BEYLIKDUZU",
-      "slug": "diger",
-      "name": "Diğer",
-      "description": "Diğer tüm özel veya ayrı sınıflanan işletmeler.",
-      "sort_order": 80,
-      "is_active": true,
-      "is_other": true,
-      "created_at": "2026-04-02T00:00:00Z",
-      "updated_at": "2026-04-02T00:00:00Z"
+      "is_other": false
     }
   }
 ]

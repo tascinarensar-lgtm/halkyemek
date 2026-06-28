@@ -1,6 +1,7 @@
 import { notifyAuthStateCleared } from "@/lib/auth/events";
 import { createIdempotencyKey, createRequestId } from "@/lib/utils/request";
 import { parseJsonResponse, toApiClientError } from "@/lib/api/errors";
+import { repairTextPayload } from "@/lib/utils/text";
 
 export interface AuthenticatedFetchOptions extends RequestInit {
   useIdempotencyKey?: boolean;
@@ -46,5 +47,5 @@ export async function authenticatedApiFetch<T>(path: string, init?: Authenticate
     throw await toApiClientError(response);
   }
 
-  return ((await parseJsonResponse<T>(response)) ?? null) as T;
+  return repairTextPayload(((await parseJsonResponse<T>(response)) ?? null) as T);
 }

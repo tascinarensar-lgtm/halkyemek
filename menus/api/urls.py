@@ -4,6 +4,7 @@ from menus.api.views_public import (
     DiscoveryCategoryBusinessListAPIView,
     DiscoveryCategoryListAPIView,
     DiscoveryHomeAPIView,
+    DiscoverySearchAPIView,
     PublicBusinessListAPIView,
     PublicBusinessDetailAPIView,
     PublicBusinessMenuAPIView,
@@ -31,6 +32,11 @@ urlpatterns = [
         "discovery/categories/",
         DiscoveryCategoryListAPIView.as_view(),
         name="discovery-category-list",
+    ),
+    path(
+        "discovery/search/",
+        DiscoverySearchAPIView.as_view(),
+        name="discovery-search",
     ),
     path(
         "discovery/categories/<slug:category_slug>/businesses/",

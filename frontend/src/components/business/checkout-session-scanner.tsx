@@ -1,22 +1,21 @@
-"use client";
+﻿"use client";
 
 import { FormEvent, useEffect, useId, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import { useMutation } from "@tanstack/react-query";
-import { Camera, Keyboard, QrCode, ScanLine, ShieldCheck } from "lucide-react";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Camera, CheckCircle2, Keyboard, QrCode, ScanLine } from "lucide-react";
 import { toast } from "sonner";
 
-import { lookupBusinessCheckoutSession } from "@/features/business-operations/api";
-import { getApiErrorMessage } from "@/lib/api/errors";
+import { consumeBusinessCheckoutSession, lookupBusinessCheckoutSession } from "@/features/business-operations/api";
+import { getApiErrorCode, getApiErrorDetails, getApiErrorMessage } from "@/lib/api/errors";
 
 type Html5QrCodeModule = typeof import("html5-qrcode");
 type Html5QrCodeInstance = InstanceType<Html5QrCodeModule["Html5Qrcode"]>;
 
 function normalizeIdentifier(input: string) {
   const trimmed = input.trim();
-  if (!trimmed) {
-    return "";
-  }
+  if (!trimmed) return "";
 
   try {
     const url = new URL(trimmed);
@@ -28,54 +27,88 @@ function normalizeIdentifier(input: string) {
 }
 
 function getCameraSupportState() {
-  if (typeof window === "undefined") {
-    return {
-      canUseCamera: false,
-      reason: "Bu tarayıcı ortamı kamera açmak için hazır değil.",
-    };
-  }
-
-  if (!window.isSecureContext) {
-    return {
-      canUseCamera: false,
-      reason: "Kamera erişimi için güvenli bağlantı gerekir. Localhost dışında HTTPS kullanmalısın.",
-    };
-  }
-
-  if (!navigator.mediaDevices?.getUserMedia) {
-    return {
-      canUseCamera: false,
-      reason: "Bu cihaz veya tarayıcı kamera erişimini desteklemiyor.",
-    };
-  }
-
-  return {
-    canUseCamera: true,
-    reason: "",
-  };
+  if (typeof window === "undefined") return { canUseCamera: false, reason: "Kamera hazır değil." };
+  if (!window.isSecureContext) return { canUseCamera: false, reason: "Kamera için HTTPS veya localhost gerekir." };
+  if (!navigator.mediaDevices?.getUserMedia) return { canUseCamera: false, reason: "Bu cihaz kamera okutmayı desteklemiyor." };
+  return { canUseCamera: true, reason: "" };
 }
 
 export function CheckoutSessionScanner({ businessId }: { businessId: number }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const queryClient = useQueryClient();
   const readerId = `checkout-session-scanner-${useId().replace(/:/g, "-")}`;
   const scannerRef = useRef<Html5QrCodeInstance | null>(null);
   const startingRef = useRef(false);
   const navigatedRef = useRef(false);
 
   const [cameraOpen, setCameraOpen] = useState(false);
-  const [cameraMessage, setCameraMessage] = useState("QR okutma alanı kapalı.");
+  const [cameraMessage, setCameraMessage] = useState("");
   const [manualValue, setManualValue] = useState("");
-
+  const [lastOrderPath, setLastOrderPath] = useState("");
   const cameraSupport = useMemo(() => getCameraSupportState(), []);
 
-  const lookupMutation = useMutation({
-    mutationFn: async (query: string) => lookupBusinessCheckoutSession(businessId, query),
-    onSuccess: (preview) => {
-      toast.success("Checkout bilgisi bulundu. Doğrulama ekranı açılıyor.");
-      router.push(`/isletme/${businessId}/tuket/${encodeURIComponent(preview.token)}`);
+  const syncAfterConsume = async (token?: string) => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["business-operations", businessId, "dashboard"] }),
+      queryClient.invalidateQueries({ queryKey: ["business-operations", businessId, "consume-history"] }),
+      queryClient.invalidateQueries({ queryKey: ["checkout-session", "latest"] }),
+      token ? queryClient.invalidateQueries({ queryKey: ["checkout-session", token] }) : Promise.resolve(),
+    ]);
+  };
+
+  const openOrderPage = (orderId: number, message: string) => {
+    const target = `/isletme/${businessId}/siparisler/${orderId}`;
+    setLastOrderPath(target);
+    toast.success(message, { description: "Sipariş teslim edildi olarak kaydedildi." });
+    if (pathname !== target) {
+      router.push(target);
+      return;
+    }
+    router.refresh();
+  };
+
+  const completeMutation = useMutation({
+    mutationFn: async (identifier: string) => {
+      const preview = await lookupBusinessCheckoutSession(businessId, identifier);
+
+      if (preview.existing_order_id) {
+        return {
+          orderId: preview.existing_order_id,
+          token: preview.token,
+          alreadyCompleted: true,
+        };
+      }
+
+      if (!preview.can_consume) {
+        throw new Error("Bu QR veya kasa kodu teslim için uygun değil.");
+      }
+
+      const result = await consumeBusinessCheckoutSession(businessId, preview.token);
+      return {
+        orderId: result.order_id,
+        token: preview.token,
+        alreadyCompleted: false,
+      };
     },
-    onError: (error) => {
-      toast.error(getApiErrorMessage(error, "Kasa kodu veya QR bilgisi bulunamadı."));
+    onSuccess: async (result) => {
+      setManualValue("");
+      await syncAfterConsume(result.token);
+      openOrderPage(result.orderId, result.alreadyCompleted ? "Sipariş daha önce tamamlanmış." : "Teslim onaylandı.");
+    },
+    onError: async (error) => {
+      const details = getApiErrorDetails(error);
+      const orderId = details?.order_id;
+      const normalizedOrderId = typeof orderId === "number" ? orderId : typeof orderId === "string" ? Number(orderId) : null;
+
+      if (getApiErrorCode(error) === "checkout_session_already_consumed" && normalizedOrderId) {
+        await syncAfterConsume();
+        openOrderPage(normalizedOrderId, "Sipariş daha önce tamamlanmış.");
+        return;
+      }
+
+      navigatedRef.current = false;
+      toast.error(getApiErrorMessage(error, "Kasa kodu veya QR bilgisi tamamlanamadı."));
     },
   });
 
@@ -83,22 +116,15 @@ export function CheckoutSessionScanner({ businessId }: { businessId: number }) {
     const scanner = scannerRef.current;
     scannerRef.current = null;
     startingRef.current = false;
-
-    if (!scanner) {
-      return;
-    }
+    if (!scanner) return;
 
     try {
       await scanner.stop();
-    } catch {
-      // Tarayıcı duruma göre stop çağrısını reddedebilir; temizleme yine de sürsün.
-    }
+    } catch {}
 
     try {
       await scanner.clear();
-    } catch {
-      // DOM temizliği ikinci aşamada da sessizce geçilebilir.
-    }
+    } catch {}
   };
 
   useEffect(() => {
@@ -109,21 +135,18 @@ export function CheckoutSessionScanner({ businessId }: { businessId: number }) {
 
   const startCamera = async () => {
     if (!cameraSupport.canUseCamera) {
-      setCameraMessage(cameraSupport.reason || "Bu cihazda kamera kullanılamıyor. Aşağıdan kasa kodu girerek devam edebilirsin.");
+      setCameraMessage(cameraSupport.reason || "Kamera kullanılamıyor. Kasa koduyla devam edebilirsin.");
       return;
     }
 
-    if (startingRef.current) {
-      return;
-    }
+    if (startingRef.current) return;
 
     startingRef.current = true;
     navigatedRef.current = false;
-    setCameraMessage("Kamera hazırlanıyor. QR kodu kare alan içinde tut.");
+    setCameraMessage("Kamera hazırlanıyor.");
 
     try {
       await stopScanner();
-
       const { Html5Qrcode, Html5QrcodeSupportedFormats } = await import("html5-qrcode");
       const scanner = new Html5Qrcode(readerId, {
         formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
@@ -133,47 +156,24 @@ export function CheckoutSessionScanner({ businessId }: { businessId: number }) {
 
       await scanner.start(
         { facingMode: "environment" },
-        {
-          fps: 10,
-          qrbox: { width: 240, height: 240 },
-          aspectRatio: 1,
-        },
+        { fps: 10, qrbox: { width: 240, height: 240 }, aspectRatio: 1 },
         (decodedText) => {
-          if (navigatedRef.current) {
-            return;
-          }
-
+          if (navigatedRef.current) return;
           const token = normalizeIdentifier(decodedText);
-          if (!token) {
-            return;
-          }
-
+          if (!token) return;
           navigatedRef.current = true;
-          setCameraMessage("QR kod okundu. Doğrulama ekranı açılıyor.");
-          toast.success("QR kod okundu. Doğrulama ekranı açılıyor.");
           void stopScanner();
           setCameraOpen(false);
-          router.push(`/isletme/${businessId}/tuket/${encodeURIComponent(token)}`);
+          setCameraMessage("QR okundu. Teslim onayı tamamlanıyor.");
+          completeMutation.mutate(token);
         },
-        () => {
-          // Sürekli okuma döngüsünde sessiz kal.
-        },
+        () => {},
       );
 
       setCameraOpen(true);
-      setCameraMessage("Kameranı QR koda yönelt. Kod okununca doğrulama ekranı otomatik açılır.");
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : "";
-      const denied = /permission|denied|notallowed/i.test(reason);
-      const noDevice = /notfound|nodevice|overconstrained|nosuitable/i.test(reason);
-
-      if (denied) {
-        setCameraMessage("Kamera izni verilmedi. Tarayıcı izinlerini açıp tekrar deneyebilir veya aşağıdan kasa kodu girebilirsin.");
-      } else if (noDevice) {
-        setCameraMessage("Bu cihazda kullanılabilir bir kamera bulunamadı. Telefon ya da kameralı cihazda okutabilir, istersen aşağıdan kasa koduyla devam edebilirsin.");
-      } else {
-        setCameraMessage("Kamera başlatılamadı. Tarayıcı desteğini kontrol et veya aşağıdan kasa kodunu yazarak devam et.");
-      }
+      setCameraMessage("QR kodu kameraya göster.");
+    } catch {
+      setCameraMessage("Kamera başlatılamadı. Kasa koduyla devam edebilirsin.");
       setCameraOpen(false);
       await stopScanner();
     } finally {
@@ -184,113 +184,86 @@ export function CheckoutSessionScanner({ businessId }: { businessId: number }) {
   const closeCamera = async () => {
     await stopScanner();
     setCameraOpen(false);
-    setCameraMessage("QR okutma alanı kapatıldı. İstersen yeniden açabilir veya kasa kodu girebilirsin.");
+    setCameraMessage("");
   };
 
   const handleLookup = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const normalized = normalizeIdentifier(manualValue);
     if (!normalized) {
-      toast.error("Lütfen kasa kodunu, QR bilgisini veya bağlantıyı gir.");
+      toast.error("Kasa kodu gerekli.");
       return;
     }
 
     try {
-      await lookupMutation.mutateAsync(normalized);
-    } catch {
-      // Hata mesajı mutation seviyesinde gösteriliyor.
-    }
+      await completeMutation.mutateAsync(normalized);
+    } catch {}
   };
 
   return (
-    <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
-      <div className="flex items-start gap-3">
-        <div className="rounded-2xl bg-zinc-950 p-2.5 text-white">
-          <ScanLine className="h-4 w-4" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-sm font-semibold text-zinc-950">QR okut veya kasa kodu gir</h3>
-            <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700">
-              Kasiyer için hızlı doğrulama
-            </span>
-          </div>
-          <p className="mt-1 text-sm leading-6 text-zinc-600">
-            Müşteri QR kodunu gösterdiğinde kamerayla okutabilir veya QR açılamıyorsa müşterinin söylediği kısa kasa kodunu yazarak devam edebilirsin.
-          </p>
+    <div className="rounded-[24px] border border-zinc-200 bg-white p-4 shadow-sm">
+      <div className="flex items-center gap-3">
+        <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-zinc-950 text-white">
+            <ScanLine className="h-5 w-5" />
+        </span>
+        <div>
+          <h3 className="text-base font-semibold text-zinc-950">QR veya kasa kodu</h3>
+          <p className="mt-0.5 text-xs text-zinc-500">Okutunca teslim otomatik tamamlanır.</p>
         </div>
       </div>
 
       <div className="mt-4 grid gap-3">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <button
-            type="button"
-            onClick={startCamera}
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-zinc-950 px-4 py-3 text-sm font-medium text-white hover:bg-zinc-800"
-          >
-            <Camera className="h-4 w-4" />
-            Kamerayla QR okut
-          </button>
-          <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-600">
-            {cameraSupport.canUseCamera
-              ? "Tarayıcı ve cihaz izin verirse kamera üzerinden QR okutma hazır."
-              : cameraSupport.reason || "Bu cihazda doğrudan kamera okutma desteklenmiyor."}
-          </div>
-        </div>
+        <button
+          type="button"
+          onClick={startCamera}
+          disabled={completeMutation.isPending}
+          className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-zinc-950 px-4 py-3 text-sm font-semibold text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
+        >
+          <Camera className="h-4 w-4" />
+          {completeMutation.isPending ? "Teslim onaylanıyor" : "Kamerayla okut ve tamamla"}
+        </button>
 
         {cameraOpen ? (
           <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-950">
-            <div id={readerId} className="min-h-[320px] bg-zinc-950" />
+            <div id={readerId} className="min-h-[240px] bg-zinc-950 sm:min-h-[300px]" />
             <div className="border-t border-white/10 p-3">
-              <button
-                type="button"
-                onClick={() => void closeCamera()}
-                className="inline-flex rounded-xl bg-white/10 px-4 py-2 text-sm font-medium text-white hover:bg-white/20"
-              >
+              <button type="button" onClick={() => void closeCamera()} className="inline-flex w-full items-center justify-center rounded-xl bg-white/10 px-4 py-2.5 text-sm font-medium text-white hover:bg-white/20 sm:w-auto">
                 Kamerayı kapat
               </button>
             </div>
           </div>
         ) : null}
 
-        <div className="rounded-2xl bg-zinc-50 p-4 text-sm leading-6 text-zinc-700">
-          {cameraMessage}
-        </div>
+        {cameraMessage ? <p className="rounded-2xl bg-zinc-50 px-4 py-3 text-sm text-zinc-600">{cameraMessage}</p> : null}
 
-        <form onSubmit={handleLookup} className="space-y-3 rounded-2xl border border-dashed border-zinc-200 bg-white p-4">
-          <div className="flex items-center gap-2 text-sm font-medium text-zinc-900">
-            <Keyboard className="h-4 w-4" />
-            Yedek doğrulama
-          </div>
-          <p className="text-sm leading-6 text-zinc-600">
-            Müşteri QR kodunu açamıyorsa ya da kamera erişimi çalışmıyorsa aşağıya kısa kasa kodunu, QR bağlantısını veya ham token bilgisini yazabilirsin.
-          </p>
-          <div className="flex flex-col gap-3 sm:flex-row">
+        <form onSubmit={handleLookup} className="flex flex-col gap-2">
+          <div className="relative min-w-0 flex-1">
+            <Keyboard className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
             <input
               value={manualValue}
               onChange={(event) => setManualValue(event.target.value)}
-              placeholder="Örn: 8G5K2M veya QR bağlantısı"
-              className="min-w-0 flex-1 rounded-xl border border-zinc-300 px-4 py-3 text-sm text-zinc-900 outline-none ring-0 transition focus:border-zinc-950"
+              placeholder="Kasa kodu veya QR bağlantısı"
+              className="w-full rounded-2xl border border-zinc-200 bg-white py-3 pl-10 pr-4 text-sm text-zinc-900 outline-none transition focus:border-zinc-950"
             />
-            <button
-              type="submit"
-              disabled={lookupMutation.isPending}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-zinc-100 px-4 py-3 text-sm font-medium text-zinc-900 hover:bg-zinc-200 disabled:cursor-not-allowed disabled:text-zinc-400"
-            >
-              <QrCode className="h-4 w-4" />
-              {lookupMutation.isPending ? "Doğrulanıyor..." : "Kodla aç"}
-            </button>
           </div>
+          <button
+            type="submit"
+            disabled={completeMutation.isPending}
+            className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-[#f50555] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#dc004c] disabled:cursor-not-allowed disabled:bg-zinc-300"
+          >
+            {completeMutation.isPending ? <CheckCircle2 className="h-4 w-4" /> : <QrCode className="h-4 w-4" />}
+            {completeMutation.isPending ? "Teslim onaylanıyor" : "Kodu gir ve tamamla"}
+          </button>
         </form>
 
-        <div className="rounded-2xl bg-sky-50 p-4 text-sm leading-6 text-sky-900">
-          <div className="flex items-start gap-3">
-            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
-            <p>
-              Doğrulama ekranı açıldıktan sonra önce ürünleri ve toplamı kontrol edip ardından tek tuşla teslim onayı verebilirsin. Böylece yanlış işletmede veya hatalı oturumda işlem yapma riski azalır.
-            </p>
-          </div>
-        </div>
+        {lastOrderPath ? (
+          <Link
+            href={lastOrderPath}
+            className="inline-flex items-center justify-center rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm font-semibold text-[#f50555] transition hover:bg-rose-100"
+          >
+            Tamamlanan siparişi aç
+          </Link>
+        ) : null}
       </div>
     </div>
   );

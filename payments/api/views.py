@@ -1,7 +1,9 @@
 import hashlib
 from typing import Iterable
 
+from django.conf import settings
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db.models import Q
 from django.http import HttpResponseRedirect
 from django.shortcuts import get_object_or_404
 from django.urls import reverse
@@ -16,11 +18,12 @@ from idempotency.drf import require_idempotency_key
 from idempotency.models import IdempotencyRecord
 from idempotency.services import IdempotencyConflict, run_idempotent
 from logs.services import create_audit_log
-from notifications.permissions import HasActivePushDevice
 from orders.models import Order
 from payments.api.serializers import (
     IyzicoTopupCallbackSerializer,
     OpsChargebackSerializer,
+    OpsManualTopupConfirmSerializer,
+    OpsPaymentIntentSerializer,
     OpsOrderRefundSerializer,
     OpsReversalResolveSerializer,
     OpsTopupReversalSerializer,
@@ -33,7 +36,7 @@ from payments.api.serializers import (
     TopupPaymentIntentCreateSerializer,
 )
 from payments.models import PaymentIntent, PaymentReversal, SettlementImport, SettlementRecord
-from payments.services import create_topup_payment_intent, finalize_topup_from_retrieval
+from payments.services import confirm_manual_topup_payment_intent, create_topup_payment_intent, finalize_topup_from_retrieval
 from payments.services_ingestion import (
     DuplicateSettlementImportError,
     execute_settlement_import,
@@ -135,7 +138,7 @@ def _import_record_summary(import_record):
 
 
 class TopupPaymentIntentCreateAPIView(generics.GenericAPIView):
-    permission_classes = [IsAuthenticated, HasActivePushDevice]
+    permission_classes = [IsAuthenticated]
     serializer_class = TopupPaymentIntentCreateSerializer
     throttle_classes = [PaymentCreateThrottle]
 
@@ -254,6 +257,117 @@ class MyPaymentIntentDetailAPIView(generics.RetrieveAPIView):
 
     def get_queryset(self):
         return PaymentIntent.objects.filter(user=self.request.user).order_by("-id")
+
+
+class OpsPaymentIntentListAPIView(APIView):
+    permission_classes = [IsAdminRole]
+    throttle_classes = [OpsActionThrottle]
+
+    @extend_schema(operation_id="ops_payment_intent_list", responses={200: OpenApiTypes.OBJECT}, tags=["ops-payments"])
+    def get(self, request):
+        qs = PaymentIntent.objects.select_related("user").order_by("-id")
+
+        purpose = str(request.query_params.get("purpose") or "").strip().upper()
+        provider = str(request.query_params.get("provider") or "").strip().upper()
+        status_value = str(request.query_params.get("status") or "").strip().upper()
+        is_settled = str(request.query_params.get("is_settled") or "").strip().lower()
+        manual_pending = str(request.query_params.get("manual_topup_pending") or "").strip().lower()
+        query = str(request.query_params.get("query") or "").strip()
+
+        if purpose:
+            qs = qs.filter(purpose=purpose)
+        if provider:
+            qs = qs.filter(provider=provider)
+        if status_value:
+            qs = qs.filter(status=status_value)
+        if is_settled in {"true", "false"}:
+            qs = qs.filter(is_settled=is_settled == "true")
+        if manual_pending == "true":
+            qs = qs.filter(
+                purpose=PaymentIntent.Purpose.TOPUP,
+                provider=PaymentIntent.Provider.MOCK,
+                is_settled=False,
+                status=PaymentIntent.Status.INITIATED,
+            )
+        if request.query_params.get("user_id"):
+            qs = qs.filter(user_id=request.query_params["user_id"])
+        if query:
+            qs = qs.filter(
+                Q(marketplace_conversation_id__icontains=query)
+                | Q(provider_payment_id__icontains=query)
+                | Q(user__username__icontains=query)
+                | Q(user__email__icontains=query)
+            )
+
+        data = OpsPaymentIntentSerializer(qs[:100], many=True).data
+        summary = {
+            "count": qs.count(),
+            "manual_topup_pending": PaymentIntent.objects.filter(
+                purpose=PaymentIntent.Purpose.TOPUP,
+                provider=PaymentIntent.Provider.MOCK,
+                is_settled=False,
+                status=PaymentIntent.Status.INITIATED,
+            ).count(),
+            "topup_settled": PaymentIntent.objects.filter(
+                purpose=PaymentIntent.Purpose.TOPUP,
+                is_settled=True,
+            ).count(),
+        }
+        return Response({"ok": True, "data": {"count": len(data), "results": data, "summary": summary}}, status=status.HTTP_200_OK)
+
+
+class OpsManualTopupConfirmAPIView(APIView):
+    permission_classes = [IsAdminRole]
+    throttle_classes = [OpsActionThrottle]
+
+    @extend_schema(operation_id="ops_manual_topup_confirm", request=OpsManualTopupConfirmSerializer, responses={200: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT, 404: OpenApiTypes.OBJECT}, tags=["ops-payments"])
+    def post(self, request, intent_id: int):
+        intent = get_object_or_404(PaymentIntent, id=intent_id)
+        serializer = OpsManualTopupConfirmSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        payload = serializer.validated_data
+        try:
+            result = confirm_manual_topup_payment_intent(
+                payment_intent=intent,
+                actor_user=request.user,
+                idempotency_key=payload.get("idempotency_key") or "",
+                received_amount=payload.get("received_amount"),
+                note=payload.get("note") or "",
+            )
+        except DjangoValidationError as exc:
+            return Response(
+                {"ok": False, "error": {"code": "manual_topup_confirm_invalid", "message": str(exc)}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        create_audit_log(
+            request=request,
+            user=request.user,
+            action="MANUAL_TOPUP_CONFIRM_OPS",
+            description="Ops confirmed manual wallet topup",
+            status_code=status.HTTP_200_OK,
+            meta={
+                "payment_intent_id": int(result.intent.pk),
+                "provider_event_id": result.provider_event_id,
+                "wallet_transaction_id": result.wallet_transaction_id,
+                "wallet_balance": int(result.wallet_balance),
+                "already_confirmed": bool(result.already_confirmed),
+                "amount": int(result.intent.amount),
+            },
+        )
+        return Response(
+            {
+                "ok": True,
+                "data": {
+                    "intent": PaymentIntentSerializer(result.intent).data,
+                    "provider_event_id": result.provider_event_id,
+                    "wallet_transaction_id": result.wallet_transaction_id,
+                    "wallet_balance": int(result.wallet_balance),
+                    "already_confirmed": bool(result.already_confirmed),
+                },
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class IyzicoTopupCallbackAPIView(generics.GenericAPIView):

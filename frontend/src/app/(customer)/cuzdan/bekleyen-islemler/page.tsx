@@ -90,7 +90,7 @@ export default function PendingTransactionsPage() {
               Cüzdan özetine dön
             </Link>
             <Link
-              href="/cuzdan/yukle"
+              href="/cuzdan?topup=1"
               className="rounded-xl bg-zinc-950 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800"
             >
               Bakiye yükle
@@ -361,7 +361,7 @@ export default function PendingTransactionsPage() {
                 Hareket geçmişini aç
               </Link>
               <Link
-                href="/cuzdan/yukle"
+                href="/cuzdan?topup=1"
                 className="inline-flex items-center justify-center rounded-xl bg-zinc-100 px-4 py-2 text-sm font-medium text-zinc-900 hover:bg-zinc-200"
               >
                 Yeni yükleme başlat

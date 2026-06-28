@@ -4,6 +4,7 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from drf_spectacular.utils import extend_schema
 
 from businesses.models import BusinessCategoryAssignment, BusinessMember, BusinessProfile, MarketplaceCategory
 from businesses.services.membership import user_has_business_role
@@ -26,6 +27,9 @@ def get_business_for_management_or_403(user, business_id: int) -> BusinessProfil
     business = BusinessProfile.objects.filter(id=business_id).first()
     if not business:
         raise PermissionDenied("Business access denied.")
+
+    if user.is_admin():
+        return business
 
     if not user_has_business_role(user, business, MANAGEMENT_ROLES):
         raise PermissionDenied("Business management access required.")
@@ -104,12 +108,24 @@ def _assert_category_assignment_can_change(*, business: BusinessProfile, marketp
 
 class BusinessCategoryListCreateAPIView(_BusinessManagementBase, APIView):
     permission_classes = [IsAuthenticated]
+    serializer_class = BusinessCategorySerializer
 
+    @extend_schema(
+        operation_id="business_category_list",
+        responses={200: BusinessCategorySerializer(many=True)},
+        tags=["business-operations"],
+    )
     def get(self, request, *args, **kwargs):
         business = self.get_business()
         rows = _get_business_category_rows(business=business)
         return Response(BusinessCategorySerializer(rows, many=True).data)
 
+    @extend_schema(
+        operation_id="business_category_create",
+        request=BusinessCategoryWriteSerializer,
+        responses={200: BusinessCategorySerializer, 201: BusinessCategorySerializer},
+        tags=["business-operations"],
+    )
     def post(self, request, *args, **kwargs):
         business = self.get_business()
         serializer = BusinessCategoryWriteSerializer(data=request.data)
@@ -159,6 +175,7 @@ class BusinessCategoryListCreateAPIView(_BusinessManagementBase, APIView):
 
 class BusinessCategoryDetailAPIView(_BusinessManagementBase, APIView):
     permission_classes = [IsAuthenticated]
+    serializer_class = BusinessCategorySerializer
 
     def _get_marketplace_category(self):
         business = self.get_business()
@@ -171,6 +188,11 @@ class BusinessCategoryDetailAPIView(_BusinessManagementBase, APIView):
             raise ValidationError({"detail": "System category could not be found for this business."})
         return marketplace_category
 
+    @extend_schema(
+        operation_id="business_category_detail",
+        responses={200: BusinessCategorySerializer},
+        tags=["business-operations"],
+    )
     def get(self, request, *args, **kwargs):
         business = self.get_business()
         marketplace_category = self._get_marketplace_category()
@@ -179,6 +201,12 @@ class BusinessCategoryDetailAPIView(_BusinessManagementBase, APIView):
         )
         return Response(BusinessCategorySerializer(row).data)
 
+    @extend_schema(
+        operation_id="business_category_update",
+        request=BusinessCategoryWriteSerializer,
+        responses={200: BusinessCategorySerializer},
+        tags=["business-operations"],
+    )
     def patch(self, request, *args, **kwargs):
         business = self.get_business()
         marketplace_category = self._get_marketplace_category()
@@ -221,6 +249,11 @@ class BusinessCategoryDetailAPIView(_BusinessManagementBase, APIView):
         )
         return Response(BusinessCategorySerializer(row).data)
 
+    @extend_schema(
+        operation_id="business_category_delete",
+        responses={204: None},
+        tags=["business-operations"],
+    )
     def delete(self, request, *args, **kwargs):
         business = self.get_business()
         marketplace_category = self._get_marketplace_category()
@@ -249,7 +282,7 @@ class BusinessMenuItemListCreateAPIView(_BusinessManagementBase, generics.ListCr
         business = self.get_business()
         return (
             MenuItem.objects.filter(business=business)
-            .select_related("category")
+            .select_related("category", "quota")
             .prefetch_related(
                 Prefetch(
                     "marketplace_category_assignments",
@@ -285,7 +318,7 @@ class BusinessMenuItemDetailAPIView(_BusinessManagementBase, generics.RetrieveUp
         business = self.get_business()
         return (
             MenuItem.objects.filter(business=business)
-            .select_related("category")
+            .select_related("category", "quota")
             .prefetch_related(
                 Prefetch(
                     "marketplace_category_assignments",
@@ -308,10 +341,16 @@ class BusinessMenuItemDetailAPIView(_BusinessManagementBase, generics.RetrieveUp
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
-        instance.is_active = False
-        instance.is_visible = False
-        instance.is_available = False
-        instance.save()
+        MenuItem.objects.filter(pk=instance.pk).update(
+            is_active=False,
+            is_visible=False,
+            is_available=False,
+        )
+        BusinessOffer.objects.filter(
+            business=instance.business,
+            menu_item=instance,
+            is_active=True,
+        ).update(is_active=False)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 

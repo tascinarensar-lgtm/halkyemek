@@ -20,7 +20,7 @@ class CheckoutConsumeGeneratesOrderQrTests(TestCase):
         enable_push_device(user=self.customer)
         CartService.add_item(user=self.customer, menu_item=self.menu_item, quantity=1)
 
-    def test_consume_creates_paid_order_with_qr_token_and_expiry(self):
+    def test_consume_creates_used_order_with_qr_token_and_delivery_time(self):
         self.client.force_authenticate(self.customer)
         token = self.client.post(
             "/api/v1/checkout-sessions/",
@@ -38,6 +38,8 @@ class CheckoutConsumeGeneratesOrderQrTests(TestCase):
         self.assertEqual(resp.status_code, 200)
 
         order = Order.objects.get(id=resp.data["order_id"])
-        self.assertEqual(order.status, Order.Status.PAID)
+        self.assertEqual(order.status, Order.Status.USED)
+        self.assertIsNotNone(order.paid_at)
+        self.assertIsNotNone(order.used_at)
         self.assertTrue(order.qr_token)
         self.assertIsNotNone(order.expires_at)

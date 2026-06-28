@@ -8,6 +8,7 @@ import redis
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from django.conf import settings
 from django.core.cache import cache
@@ -83,8 +84,23 @@ def _broker_ready() -> bool:
         from halkyemekproject.celery import app as celery_app
 
         timeout_seconds = float(getattr(settings, "READINESS_BROKER_TIMEOUT_SECONDS", 1.0))
-        with celery_app.connection_for_read() as connection:
-            connection.connect_timeout = timeout_seconds
+        broker_url = str(getattr(settings, "CELERY_BROKER_URL", "") or "")
+        broker_scheme = urlparse(broker_url).scheme
+        if broker_scheme in {"redis", "rediss"}:
+            redis_client = redis.Redis.from_url(
+                broker_url,
+                socket_connect_timeout=timeout_seconds,
+                socket_timeout=timeout_seconds,
+            )
+            return bool(redis_client.ping())
+
+        transport_options = dict(getattr(celery_app.conf, "broker_transport_options", {}) or {})
+        transport_options["socket_connect_timeout"] = timeout_seconds
+        transport_options["socket_timeout"] = timeout_seconds
+        with celery_app.connection_for_read(
+            connect_timeout=timeout_seconds,
+            transport_options=transport_options,
+        ) as connection:
             connection.ensure_connection(
                 max_retries=1,
                 timeout=timeout_seconds,
@@ -285,15 +301,11 @@ def _lock_ttls_valid() -> bool:
     return True
 
 
-def _runtime_core_checks() -> dict[str, bool]:
+def _runtime_core_checks(*, include_active_checks: bool = True) -> dict[str, bool]:
     metrics_token = bool(getattr(settings, "METRICS_TOKEN", ""))
     metrics_ip_allowlist = bool(getattr(settings, "METRICS_IP_ALLOWLIST", []))
-    return {
-        "database": _database_ready(),
+    passive_checks = {
         "database_engine_supported": _database_engine_supported(),
-        "cache": _cache_ready(),
-        "celery_broker": _broker_ready(),
-        "pending_migrations": not _migrations_pending(),
         "shared_cache_configured": _shared_cache_configured(),
         "shared_result_backend_configured": _shared_result_backend_configured(),
         "release_version_configured": _release_configured(),
@@ -326,6 +338,16 @@ def _runtime_core_checks() -> dict[str, bool]:
         "settlement_import_dirs_valid": _settlement_import_dirs_valid(),
         "metrics_protected": metrics_token or metrics_ip_allowlist or bool(getattr(settings, "DEBUG", False)) or bool(getattr(settings, "TESTING", False)),
     }
+    if not include_active_checks:
+        return passive_checks
+
+    return {
+        "database": _database_ready(),
+        "cache": _cache_ready(),
+        "celery_broker": _broker_ready(),
+        "pending_migrations": not _migrations_pending(),
+        **passive_checks,
+    }
 
 
 def _runtime_ops_checks() -> dict[str, bool]:
@@ -350,6 +372,11 @@ def _runtime_ops_details() -> dict[str, dict[str, object]]:
     return {job_name: _job_snapshot(job_name, ttl_seconds) for job_name, ttl_seconds in job_ttls.items()}
 
 
+def _is_public_production_readiness() -> bool:
+    app_env = str(getattr(settings, "APP_ENV", "dev") or "dev").strip().lower()
+    return app_env in {"prod", "production"} and not bool(getattr(settings, "DEBUG", False)) and not bool(getattr(settings, "TESTING", False))
+
+
 def healthz(request):
     return JsonResponse({
         "ok": True,
@@ -368,6 +395,16 @@ def readyz(request):
     core_ok = all(core_checks.values())
     ops_ok = all(ops_checks.values())
     ok = core_ok and (ops_ok if strict else True)
+    status_code = 200 if ok else 503
+
+    if _is_public_production_readiness():
+        return JsonResponse(
+            {
+                "ok": ok,
+                "strict": strict,
+            },
+            status=status_code,
+        )
 
     payload = {
         "ok": ok,
@@ -386,7 +423,6 @@ def readyz(request):
             "ops": ops_details,
         },
     }
-    status_code = 200 if ok else 503
     return JsonResponse(payload, status=status_code)
 
 

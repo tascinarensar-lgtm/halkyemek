@@ -1,7 +1,8 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import type { MessagePayload } from "firebase/messaging";
 import { toast } from "sonner";
 
 import {
@@ -18,6 +19,32 @@ function invalidateNotificationRelatedQueries(queryClient: ReturnType<typeof use
     queryClient.invalidateQueries({ queryKey: ["orders"] }),
     queryClient.invalidateQueries({ queryKey: ["wallet"] }),
   ]);
+}
+
+function showNativeForegroundNotification(payload: MessagePayload) {
+  if (typeof window === "undefined" || !("Notification" in window) || window.Notification.permission !== "granted") {
+    return;
+  }
+
+  const title = payload.data?.title || payload.notification?.title || "Yeni bir bildirimin var";
+  const body = payload.data?.body || payload.notification?.body || "HalkYemek hesabında yeni bir gelişme oluştu.";
+  const url = payload.data?.url || "/bildirimler";
+
+  try {
+    const notification = new window.Notification(title, {
+      body,
+      icon: "/logo-halkyemek.png",
+      badge: "/hy-favicon.svg",
+      tag: payload.data?.tag || "halkyemek-notification",
+    });
+    notification.onclick = () => {
+      window.focus();
+      window.location.assign(url);
+      notification.close();
+    };
+  } catch {
+    // Native notifications are best-effort; the in-app toast still informs the user.
+  }
 }
 
 export function WebPushBootstrap() {
@@ -67,8 +94,9 @@ export function WebPushBootstrap() {
     let cancelled = false;
 
     void startForegroundMessageListener(async (payload) => {
-      const title = payload.notification?.title || "Yeni bir bildirimin var";
-      const description = payload.notification?.body || "HalkYemek hesabında yeni bir gelişme oluştu.";
+      const title = payload.data?.title || payload.notification?.title || "Yeni bir bildirimin var";
+      const description = payload.data?.body || payload.notification?.body || "HalkYemek hesabında yeni bir gelişme oluştu.";
+      showNativeForegroundNotification(payload);
       toast.success(title, { description });
       await invalidateNotificationRelatedQueries(queryClient);
     })

@@ -20,20 +20,13 @@ class CheckoutApiErrorFormatTests(TestCase):
 
     def test_insufficient_balance_returns_standard_detail_payload(self):
         self.client.force_authenticate(self.customer)
-        token = self.client.post(
+        resp = self.client.post(
             "/api/v1/checkout-sessions/",
             {},
             format="json",
             HTTP_IDEMPOTENCY_KEY="error-format-create",
-        ).data["token"]
-
-        self.client.force_authenticate(self.cashier)
-        resp = self.client.post(
-            f"/api/v1/businesses/{self.business.id}/checkout-sessions/{token}/consume/",
-            {},
-            format="json",
         )
         self.assertEqual(resp.status_code, 400)
         self.assertEqual(resp.data["ok"], False)
-        self.assertEqual(resp.data["error"]["code"], "ValidationError")
+        self.assertEqual(resp.data["error"]["code"], "checkout_session_invalid")
         self.assertIn("Insufficient", str(resp.data["error"]["message"]))

@@ -1,0 +1,9 @@
+services:
+  nginx:
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:-halkyemek.com.tr}
+      API_DOMAIN: ${API_DOMAIN:-api.halkyemek.com.tr}
+    volumes:
+      - ./deploy/nginx/default.ssl.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./deploy/certbot/www:/var/www/certbot:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro

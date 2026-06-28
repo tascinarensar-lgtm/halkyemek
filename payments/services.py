@@ -3,11 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 
 from businesses.models import BusinessProfile
+from common.references import payment_ref
 from payments.marketplace import calculate_split
 from payments.models import PaymentIntent, ProviderEvent
 from payments.providers.iyzico import (
@@ -20,6 +22,7 @@ from notifications.models import Notification
 from notifications.services import NotificationService
 from payments.providers.iyzico_marketplace import build_marketplace_payment_payload
 from payments.references import payment_conversation_id
+from wallets.models import Wallet, WalletTransaction
 from wallets.services import WalletService
 
 
@@ -30,9 +33,59 @@ class SettlementResult:
     provider_event_id: Optional[str] = None
 
 
+@dataclass(frozen=True)
+class ManualTopupConfirmationResult:
+    intent: PaymentIntent
+    provider_event_id: str
+    wallet_transaction_id: int | None
+    wallet_balance: int
+    already_confirmed: bool = False
+
+
+MANUAL_TOPUP_PENDING_STATUS = "MANUAL_PENDING"
+MANUAL_TOPUP_CONFIRMED_STATUS = "MANUAL_CONFIRMED"
+
+
 def normalize_provider_name(provider: str) -> str:
     value = str(provider or "").strip().upper()
     return value or ProviderEvent.Provider.MOCK
+
+
+def normalize_topup_provider_name(provider: str | None = None) -> str:
+    value = str(provider if provider is not None else getattr(settings, "TOPUP_PROVIDER", "manual")).strip().lower()
+    if value in {"", "manual", "halkyemek", "mock"}:
+        return "manual"
+    if value == "iyzico":
+        return "iyzico"
+    raise ValidationError({"provider": f"Unsupported topup provider: {provider}"})
+
+
+def _manual_topup_instructions(*, intent: PaymentIntent) -> dict[str, Any]:
+    account_name = str(getattr(settings, "MANUAL_TOPUP_ACCOUNT_NAME", "HalkYemek") or "HalkYemek").strip()
+    iban = str(getattr(settings, "MANUAL_TOPUP_IBAN", "") or "").strip()
+    reference = payment_ref(intent.pk)
+    configured_instructions = list(getattr(settings, "MANUAL_TOPUP_INSTRUCTIONS", []) or [])
+    instructions = [
+        str(item).strip()
+        for item in configured_instructions
+        if str(item).strip()
+    ]
+    if not instructions:
+        instructions = [
+            "Odeme aciklamasina yukleme referansini yazin.",
+            "HalkYemek operasyon ekibi odemeyi kontrol edince bakiye cuzdaniniza yansir.",
+            "Ayni referansla birden fazla onay verilirse sistem bakiyeyi ikinci kez yuklemez.",
+        ]
+
+    return {
+        "mode": "manual",
+        "provider": "HalkYemek",
+        "payment_reference": reference,
+        "account_name": account_name,
+        "iban": iban,
+        "instructions": instructions,
+        "ops_confirmation_required": True,
+    }
 
 
 def _resolve_unique_payment_intent(qs) -> PaymentIntent | None:
@@ -47,16 +100,24 @@ def create_topup_payment_intent(*, user, amount: int, callback_url: str | None =
     if amount <= 0:
         raise ValidationError("payment.amount_must_be_positive")
 
+    topup_provider = normalize_topup_provider_name()
+    provider = PaymentIntent.Provider.MOCK if topup_provider == "manual" else PaymentIntent.Provider.IYZICO
     intent = PaymentIntent.objects.create(
         user=user,
         purpose=PaymentIntent.Purpose.TOPUP,
         amount=int(amount),
         gross_price=int(amount),
-        provider=PaymentIntent.Provider.IYZICO,
+        provider=provider,
         status=PaymentIntent.Status.INITIATED,
     )
     intent.marketplace_conversation_id = payment_conversation_id(intent.pk)
     intent.save(update_fields=["marketplace_conversation_id", "updated_at"])
+
+    if topup_provider == "manual":
+        intent.normalized_status = MANUAL_TOPUP_PENDING_STATUS
+        intent.provider_raw_init = _manual_topup_instructions(intent=intent)
+        intent.save(update_fields=["normalized_status", "provider_raw_init", "updated_at"])
+        return intent
 
     if callback_url:
         try:
@@ -69,6 +130,167 @@ def create_topup_payment_intent(*, user, amount: int, callback_url: str | None =
         intent.save(update_fields=["provider_session_token", "provider_page_url", "provider_raw_init", "updated_at"])
 
     return intent
+
+
+@transaction.atomic
+def confirm_manual_topup_payment_intent(
+    *,
+    payment_intent: PaymentIntent,
+    actor_user,
+    idempotency_key: str,
+    received_amount: int | None = None,
+    note: str = "",
+) -> ManualTopupConfirmationResult:
+    idempotency_key = str(idempotency_key or "").strip()
+    if not idempotency_key:
+        raise ValidationError("manual_topup.idempotency_key_required")
+
+    intent = (
+        PaymentIntent.objects.select_for_update()
+        .select_related("user")
+        .filter(pk=payment_intent.pk)
+        .first()
+    )
+    if intent is None:
+        raise ValidationError("manual_topup.intent_not_found")
+    if intent.purpose != PaymentIntent.Purpose.TOPUP:
+        raise ValidationError("manual_topup.requires_topup_intent")
+    if intent.provider != PaymentIntent.Provider.MOCK:
+        raise ValidationError("manual_topup.requires_manual_provider")
+    if intent.status in {PaymentIntent.Status.FAILED, PaymentIntent.Status.CANCELLED}:
+        raise ValidationError("manual_topup.intent_is_terminal")
+    if received_amount is not None and int(received_amount) != int(intent.amount):
+        raise ValidationError("manual_topup.received_amount_mismatch")
+
+    event_id = f"manual-topup-confirm:{intent.pk}:{idempotency_key}"
+    event_payload = {
+        "intent_id": int(intent.pk),
+        "amount": int(intent.amount),
+        "received_amount": int(received_amount if received_amount is not None else intent.amount),
+        "note": str(note or "")[:255],
+        "actor_user_id": int(getattr(actor_user, "pk", 0) or 0),
+        "payment_reference": (intent.provider_raw_init or {}).get("payment_reference") or payment_ref(intent.pk),
+    }
+    provider_event, _ = ProviderEvent.objects.get_or_create(
+        provider=ProviderEvent.Provider.MOCK,
+        event_id=event_id,
+        defaults={
+            "event_type": "manual.topup.confirmed",
+            "payload": event_payload,
+            "signature_ok": True,
+        },
+    )
+
+    existing_tx = (
+        WalletTransaction.objects.select_related("wallet")
+        .filter(
+            wallet__user=intent.user,
+            payment_intent=intent,
+            transaction_type=WalletTransaction.Type.TOP_UP,
+        )
+        .order_by("id")
+        .first()
+    )
+    if intent.is_settled or existing_tx is not None:
+        now = timezone.now()
+        update_fields = ["updated_at"]
+        if intent.status != PaymentIntent.Status.PAID:
+            intent.status = PaymentIntent.Status.PAID
+            update_fields.append("status")
+        if intent.normalized_status != MANUAL_TOPUP_CONFIRMED_STATUS:
+            intent.normalized_status = MANUAL_TOPUP_CONFIRMED_STATUS
+            update_fields.append("normalized_status")
+        if not intent.is_processed:
+            intent.is_processed = True
+            intent.processed_at = intent.processed_at or now
+            update_fields.extend(["is_processed", "processed_at"])
+        if not intent.is_settled:
+            intent.is_settled = True
+            intent.settled_at = intent.settled_at or now
+            update_fields.extend(["is_settled", "settled_at"])
+        if not intent.provider_payment_id:
+            intent.provider_payment_id = f"MANUAL-TOPUP-{intent.pk}"
+            update_fields.append("provider_payment_id")
+        if not intent.settlement_reference_code:
+            intent.settlement_reference_code = f"MANUAL-SETTLED-{intent.pk}"
+            update_fields.append("settlement_reference_code")
+        intent.save(update_fields=sorted(set(update_fields)))
+        _mark_provider_event_processed(provider_event)
+        wallet = Wallet.objects.filter(user=intent.user).first()
+        return ManualTopupConfirmationResult(
+            intent=intent,
+            provider_event_id=provider_event.event_id,
+            wallet_transaction_id=int(existing_tx.pk) if existing_tx is not None else None,
+            wallet_balance=int(getattr(wallet, "balance", 0) or 0),
+            already_confirmed=True,
+        )
+
+    payment_id = f"MANUAL-TOPUP-{intent.pk}"
+    if PaymentIntent.objects.filter(provider_payment_id=payment_id).exclude(pk=intent.pk).exists():
+        raise ValidationError("manual_topup.provider_payment_id_conflict")
+
+    wallet_result = WalletService.topup(
+        user=intent.user,
+        amount=int(intent.amount),
+        description="HalkYemek manual topup confirmed",
+        provider_event=provider_event,
+        payment_intent=intent,
+    )
+
+    now = timezone.now()
+    raw_result = dict(intent.provider_raw_result or {})
+    raw_result["manual_confirmation"] = {
+        **event_payload,
+        "confirmed_at": now.isoformat(),
+        "provider_event_id": provider_event.event_id,
+        "wallet_transaction_id": int(wallet_result.tx.pk),
+    }
+    intent.provider_payment_id = payment_id
+    intent.status = PaymentIntent.Status.PAID
+    intent.normalized_status = MANUAL_TOPUP_CONFIRMED_STATUS
+    intent.is_processed = True
+    intent.processed_at = now
+    intent.is_settled = True
+    intent.settled_at = now
+    intent.settlement_reference_code = f"MANUAL-SETTLED-{intent.pk}"
+    intent.provider_raw_result = raw_result
+    intent.processing_error = ""
+    intent.save(
+        update_fields=[
+            "provider_payment_id",
+            "status",
+            "normalized_status",
+            "is_processed",
+            "processed_at",
+            "is_settled",
+            "settled_at",
+            "settlement_reference_code",
+            "provider_raw_result",
+            "processing_error",
+            "updated_at",
+        ]
+    )
+    _mark_provider_event_processed(provider_event)
+
+    NotificationService.enqueue(
+        user=intent.user,
+        type=Notification.Type.PAYMENT_SETTLED,
+        title="Bakiyen yuklendi",
+        body="HalkYemek odeme onayin tamamlandi ve tutar cuzdanina yansidi.",
+        payload={
+            "payment_intent_id": intent.pk,
+            "provider_event_id": provider_event.event_id,
+            "amount": int(intent.amount),
+        },
+        dedupe_key=f"manual_topup_confirmed:{intent.pk}",
+    )
+    return ManualTopupConfirmationResult(
+        intent=intent,
+        provider_event_id=provider_event.event_id,
+        wallet_transaction_id=int(wallet_result.tx.pk),
+        wallet_balance=int(wallet_result.wallet.balance),
+        already_confirmed=False,
+    )
 
 
 @transaction.atomic

@@ -1,12 +1,12 @@
 "use client";
 
-import { ReactNode } from "react";
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 
-import { useSession } from "@/hooks/use-session";
-import { LoadingSkeleton } from "@/components/ui/loading-skeleton";
 import { ErrorState } from "@/components/ui/error-state";
+import { LoadingSkeleton } from "@/components/ui/loading-skeleton";
+import { useSession } from "@/hooks/use-session";
 
 function buildLoginHref(pathname: string | null, search: string) {
   const target = pathname && pathname !== "/" ? `${pathname}${search}` : "";
@@ -46,8 +46,8 @@ export function ProtectedPageShell({
     return (
       <div className="space-y-4">
         <ErrorState title="Ops erişimi yok" description="Bu alan yalnızca admin kullanıcılar içindir. Backend yine nihai otorite olarak kalır." />
-        <Link href="/hesabim" className="inline-flex rounded-xl bg-zinc-950 px-4 py-2 text-sm font-medium text-white">
-          Hesabıma dön
+        <Link href="/" className="inline-flex rounded-xl bg-zinc-950 px-4 py-2 text-sm font-medium text-white">
+          Ana sayfaya dön
         </Link>
       </div>
     );
@@ -57,8 +57,8 @@ export function ProtectedPageShell({
     return (
       <div className="space-y-4">
         <ErrorState title="İşletme üyeliği gerekli" description="Bu alan işletme üyeliği olan kullanıcılar içindir." />
-        <Link href="/hesabim" className="inline-flex rounded-xl bg-zinc-950 px-4 py-2 text-sm font-medium text-white">
-          Hesabıma dön
+        <Link href="/" className="inline-flex rounded-xl bg-zinc-950 px-4 py-2 text-sm font-medium text-white">
+          Ana sayfaya dön
         </Link>
       </div>
     );

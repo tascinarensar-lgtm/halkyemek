@@ -23,7 +23,23 @@ class PushDeviceEnforcementTests(TestCase):
         self.menu_item = create_menu_item(business=self.business, category=self.category, price_amount=1700)
         seed_wallet(user=self.customer, amount=5000)
 
-    def test_checkout_create_requires_active_push_device(self):
+    @staticmethod
+    def _create_intent_mock(*, user, amount, callback_url):
+        intent = PaymentIntent.objects.create(
+            user=user,
+            purpose=PaymentIntent.Purpose.TOPUP,
+            amount=int(amount),
+            gross_price=int(amount),
+            provider=PaymentIntent.Provider.IYZICO,
+            status=PaymentIntent.Status.INITIATED,
+            provider_page_url=str(callback_url),
+        )
+        intent.marketplace_conversation_id = f"HY-PI-{intent.pk}"
+        intent.save(update_fields=["marketplace_conversation_id", "updated_at"])
+        return intent
+
+    def test_checkout_create_allows_user_without_active_push_device(self):
+        CartService.add_item(user=self.customer, menu_item=self.menu_item, quantity=1)
         self.client.force_authenticate(self.customer)
         response = self.client.post(
             "/api/v1/checkout-sessions/",
@@ -32,13 +48,13 @@ class PushDeviceEnforcementTests(TestCase):
             HTTP_IDEMPOTENCY_KEY="notif-enforce-checkout-create",
         )
 
-        self.assertEqual(response.status_code, 403)
-        self.assertEqual(response.data["error"]["code"], "NOTIFICATION_NOT_READY")
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["status"], CheckoutSession.Status.PENDING)
 
-    def test_topup_create_requires_active_push_device(self):
+    def test_topup_create_allows_user_without_active_push_device(self):
         self.client.force_authenticate(self.customer)
 
-        with patch("payments.api.views.create_topup_payment_intent") as create_mock:
+        with patch("payments.api.views.create_topup_payment_intent", side_effect=self._create_intent_mock) as create_mock:
             response = self.client.post(
                 "/api/v1/payments/topup/intents/",
                 {"amount": 1000},
@@ -46,12 +62,10 @@ class PushDeviceEnforcementTests(TestCase):
                 HTTP_IDEMPOTENCY_KEY="notif-enforce-topup-create",
             )
 
-        self.assertEqual(response.status_code, 403)
-        self.assertEqual(response.data["error"]["code"], "NOTIFICATION_NOT_READY")
-        self.assertEqual(PaymentIntent.objects.count(), 0)
-        self.assertEqual(create_mock.call_count, 0)
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(create_mock.call_count, 1)
 
-    def test_wallet_endpoints_require_active_push_device(self):
+    def test_wallet_endpoints_allow_user_without_active_push_device(self):
         self.client.force_authenticate(self.customer)
         for endpoint in (
             "/api/v1/wallet/",
@@ -59,22 +73,22 @@ class PushDeviceEnforcementTests(TestCase):
             "/api/v1/wallet/pending-transactions/",
         ):
             response = self.client.get(endpoint)
-            self.assertEqual(response.status_code, 403)
-            self.assertEqual(response.data["error"]["code"], "NOTIFICATION_NOT_READY")
+            self.assertEqual(response.status_code, 200)
 
-    def test_cart_endpoints_require_active_push_device(self):
+    def test_cart_endpoints_allow_draft_cart_without_active_push_device(self):
         self.client.force_authenticate(self.customer)
-        response = self.client.get("/api/v1/cart/")
-        self.assertEqual(response.status_code, 403)
-        self.assertEqual(response.data["error"]["code"], "NOTIFICATION_NOT_READY")
 
         add_item = self.client.post(
             "/api/v1/cart/items/",
             {"menu_item_id": self.menu_item.id, "quantity": 1},
             format="json",
         )
-        self.assertEqual(add_item.status_code, 403)
-        self.assertEqual(add_item.data["error"]["code"], "NOTIFICATION_NOT_READY")
+        self.assertEqual(add_item.status_code, 200)
+        self.assertEqual(add_item.data["item_count"], 1)
+
+        response = self.client.get("/api/v1/cart/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["items"][0]["menu_item_id"], self.menu_item.id)
 
     def test_admin_bypass_allows_wallet_access_without_device(self):
         admin = create_user(username="notif-admin", role=User.Role.ADMIN, is_staff=True)

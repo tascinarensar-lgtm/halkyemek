@@ -22,6 +22,7 @@ export interface BusinessDashboardSummary {
     pending: Array<{
       id: number;
       token: string;
+      cashier_code?: string | null;
       status: string;
       amount: number;
       total_payable_amount: number;
@@ -201,6 +202,10 @@ export interface BusinessProfileOperations {
   short_description: string;
   intro_text: string;
   badge_text: string;
+  address_line?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  google_maps_url?: string | null;
   marketplace_is_visible: boolean;
   listing_type: string;
   is_featured: boolean;
@@ -216,6 +221,10 @@ export interface BusinessProfilePatchInput {
   short_description?: string;
   intro_text?: string;
   badge_text?: string;
+  address_line?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  google_maps_url?: string | null;
   marketplace_is_visible?: boolean;
   listing_type?: string;
   is_featured?: boolean;
@@ -279,12 +288,17 @@ export interface BusinessMenuItem {
   name: string;
   slug: string;
   description: string;
+  minimum_grams: number | null;
   price_amount: number;
   image_url: string;
   sort_order: number;
   is_active: boolean;
   is_visible: boolean;
   is_available: boolean;
+  quota_enabled: boolean;
+  quota_total: number | null;
+  quota_remaining: number | null;
+  low_stock_threshold: number;
   marketplace_categories: BusinessMenuMarketplaceCategory[];
   media_assets: BusinessEntityMediaAsset[];
   primary_image_url: string;
@@ -294,11 +308,16 @@ export interface BusinessMenuItemInput {
   name: string;
   slug: string;
   description?: string;
+  minimum_grams?: number | null;
   price_amount: number;
   sort_order?: number;
   is_active?: boolean;
   is_visible?: boolean;
   is_available?: boolean;
+  quota_enabled?: boolean;
+  quota_total?: number | null;
+  quota_remaining?: number | null;
+  low_stock_threshold?: number;
   marketplace_category_ids: number[];
 }
 

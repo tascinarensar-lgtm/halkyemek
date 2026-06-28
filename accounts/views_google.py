@@ -146,6 +146,10 @@ class GoogleLoginAPIView(APIView):
                 "business_id",
                 "business__business_name",
                 "role",
+                "access_halkyemek",
+                "access_halktasarruf",
+                "business__supports_halkyemek",
+                "business__supports_halktasarruf",
             )
         )
 
@@ -169,6 +173,10 @@ class GoogleLoginAPIView(APIView):
                         "id": row["business_id"],
                         "name": row["business__business_name"],
                         "member_role": row["role"],
+                        "access_halkyemek": row["access_halkyemek"],
+                        "access_halktasarruf": row["access_halktasarruf"],
+                        "supports_halkyemek": row["business__supports_halkyemek"],
+                        "supports_halktasarruf": row["business__supports_halktasarruf"],
                     }
                     for row in memberships
                 ],

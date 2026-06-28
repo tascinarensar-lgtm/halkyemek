@@ -10,19 +10,20 @@ function normalizeCurrency(currency?: string) {
 export function formatCurrency(amount: number | null | undefined, currency = "TRY") {
   const normalizedAmount = normalizeAmount(amount);
   const normalizedCurrency = normalizeCurrency(currency);
+  const majorAmount = normalizedAmount / 100;
 
   try {
     return new Intl.NumberFormat("tr-TR", {
       style: "currency",
       currency: normalizedCurrency,
       maximumFractionDigits: 2,
-    }).format(normalizedAmount);
+    }).format(majorAmount);
   } catch {
     return new Intl.NumberFormat("tr-TR", {
       style: "currency",
       currency: "TRY",
       maximumFractionDigits: 2,
-    }).format(normalizedAmount);
+    }).format(majorAmount);
   }
 }
 

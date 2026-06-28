@@ -67,6 +67,7 @@ class BusinessDashboardSummaryAPIView(APIView):
         pending_sessions = CheckoutSession.objects.filter(
             business=business,
             status__in=[CheckoutSession.Status.PENDING, CheckoutSession.Status.CONFIRMED],
+            expires_at__gt=now,
         ).order_by("expires_at", "-created_at")[:10]
 
         latest_consumed = CheckoutSession.objects.filter(
@@ -143,6 +144,7 @@ class BusinessDashboardSummaryAPIView(APIView):
                     {
                         "id": s.id,
                         "token": s.token,
+                        "cashier_code": s.cashier_code,
                         "status": s.status,
                         "amount": int(s.amount),
                         "total_payable_amount": int(s.amount),
@@ -347,6 +349,10 @@ class BusinessProfileOperationsAPIView(APIView):
             "short_description": business.short_description,
             "intro_text": business.intro_text,
             "badge_text": business.badge_text,
+            "address_line": business.address_line,
+            "latitude": float(business.latitude) if business.latitude is not None else None,
+            "longitude": float(business.longitude) if business.longitude is not None else None,
+            "google_maps_url": business.google_maps_url,
             "marketplace_is_visible": business.marketplace_is_visible,
             "listing_type": business.listing_type,
             "is_featured": business.is_featured,
@@ -362,6 +368,10 @@ class BusinessProfileOperationsAPIView(APIView):
                     "listing_type",
                     "is_featured",
                     "display_priority",
+                    "address_line",
+                    "latitude",
+                    "longitude",
+                    "google_maps_url",
                 ],
             },
             "member_role": role,
@@ -375,9 +385,9 @@ class BusinessProfileOperationsAPIView(APIView):
         serializer.is_valid(raise_exception=True)
         payload = serializer.validated_data
 
-        admin_only_fields = {"listing_type", "is_featured", "display_priority"}
+        admin_only_fields = {"listing_type", "is_featured", "display_priority", "address_line", "latitude", "longitude", "google_maps_url"}
         if role != "ADMIN" and any(field in payload for field in admin_only_fields):
-            raise PermissionDenied("Only admin can update listing_type/is_featured/display_priority.")
+            raise PermissionDenied("Only admin can update listing and location fields.")
 
         update_fields: list[str] = []
         for field, value in payload.items():

@@ -2,6 +2,7 @@ from django.core.management import call_command
 from django.test import TestCase
 
 from accounts.models import User
+from businesses.bootstrap import district_bootstrap_items
 from businesses.models import BusinessMember, BusinessProfile, MarketplaceCategory
 from menus.models import BusinessOffer, Category, MediaAsset, MenuItem
 from notifications.models import Device, Notification
@@ -14,7 +15,9 @@ class BootstrapDemoDataCommandTests(TestCase):
     def test_command_creates_meaningful_demo_data(self):
         call_command("bootstrap_demo_data")
 
-        self.assertTrue(MarketplaceCategory.objects.filter(slug="ev-yemegi", is_active=True).exists())
+        expected_slugs = {item.slug for item in district_bootstrap_items(BusinessProfile.District.BEYLIKDUZU)}
+        active_slugs = set(MarketplaceCategory.objects.filter(is_active=True).values_list("slug", flat=True))
+        self.assertTrue(expected_slugs.issubset(active_slugs))
         self.assertTrue(User.objects.filter(username="demo_customer").exists())
         self.assertTrue(User.objects.filter(username="demo_business").exists())
         self.assertTrue(User.objects.filter(username="demo_ops", role=User.Role.ADMIN, is_staff=True).exists())

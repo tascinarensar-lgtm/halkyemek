@@ -156,7 +156,7 @@ class ReadinessTests(TestCase):
     @override_settings(
         DEBUG=False,
         TESTING=False,
-        APP_ENV="prod",
+        APP_ENV="staging",
         GOOGLE_OAUTH_CLIENT_ID="x.apps.googleusercontent.com",
         FCM_PROJECT_ID="proj",
         FCM_CLIENT_EMAIL="a@b.com",
@@ -188,7 +188,7 @@ class ReadinessTests(TestCase):
     @override_settings(
         DEBUG=False,
         TESTING=False,
-        APP_ENV="prod",
+        APP_ENV="staging",
         GOOGLE_OAUTH_CLIENT_ID="x.apps.googleusercontent.com",
         FCM_PROJECT_ID="proj",
         FCM_CLIENT_EMAIL="a@b.com",
@@ -285,3 +285,32 @@ class ReadinessTests(TestCase):
         resp = self.client.get("/health/readiness/")
         self.assertEqual(resp.status_code, 503)
         self.assertFalse(resp.json()["checks"]["request_size_limits_valid"])
+
+    @override_settings(
+        DEBUG=False,
+        TESTING=False,
+        APP_ENV="prod",
+        GOOGLE_OAUTH_CLIENT_ID="x.apps.googleusercontent.com",
+        FCM_PROJECT_ID="proj",
+        FCM_CLIENT_EMAIL="a@b.com",
+        FCM_PRIVATE_KEY="dummy",
+        IYZICO_API_KEY="sandbox-key",
+        IYZICO_SECRET_KEY="sandbox-secret",
+        PAYMENT_WEBHOOK_SECRET="test-secret",
+        SECRET_KEY="test-secret-key-12345678901234567890",
+        SENTRY_DSN="https://example@sentry.invalid/1",
+        CANONICAL_API_BASE_URL="https://api.example.com",
+        METRICS_TOKEN="secret",
+        ALLOWED_HOSTS=["api.example.com", "testserver"],
+        CSRF_TRUSTED_ORIGINS=["https://api.example.com"],
+        CACHES={
+            "default": {
+                "BACKEND": "django.core.cache.backends.redis.RedisCache",
+                "LOCATION": "redis://localhost:6379/1",
+            }
+        },
+    )
+    def test_readiness_hides_details_in_production(self):
+        resp = self.client.get("/health/readiness/")
+        self.assertIn(resp.status_code, {200, 503})
+        self.assertEqual(resp.json(), {"ok": resp.status_code == 200, "strict": False})

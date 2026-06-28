@@ -40,6 +40,11 @@ class IyzicoTopupCallbackSerializer(serializers.Serializer):
 
 
 class PaymentIntentSerializer(serializers.ModelSerializer):
+    payment_reference = serializers.SerializerMethodField()
+    manual_payment_account_name = serializers.SerializerMethodField()
+    manual_payment_iban = serializers.SerializerMethodField()
+    manual_payment_instructions = serializers.SerializerMethodField()
+
     class Meta:
         model = PaymentIntent
         fields = [
@@ -58,8 +63,49 @@ class PaymentIntentSerializer(serializers.ModelSerializer):
             "is_settled",
             "settled_at",
             "marketplace_conversation_id",
+            "payment_reference",
+            "manual_payment_account_name",
+            "manual_payment_iban",
+            "manual_payment_instructions",
             "created_at",
             "updated_at",
+        ]
+        read_only_fields = fields
+
+    def _manual_payload(self, obj: PaymentIntent) -> dict:
+        payload = obj.provider_raw_init or {}
+        if not isinstance(payload, dict):
+            return {}
+        return payload
+
+    def get_payment_reference(self, obj: PaymentIntent) -> str:
+        payload = self._manual_payload(obj)
+        return payload.get("payment_reference") or obj.marketplace_conversation_id or f"HY-PI-{obj.pk}"
+
+    def get_manual_payment_account_name(self, obj: PaymentIntent) -> str:
+        return self._manual_payload(obj).get("account_name") or ""
+
+    def get_manual_payment_iban(self, obj: PaymentIntent) -> str:
+        return self._manual_payload(obj).get("iban") or ""
+
+    def get_manual_payment_instructions(self, obj: PaymentIntent) -> list[str]:
+        instructions = self._manual_payload(obj).get("instructions") or []
+        if not isinstance(instructions, list):
+            return []
+        return [str(item) for item in instructions if str(item).strip()]
+
+
+class OpsPaymentIntentSerializer(PaymentIntentSerializer):
+    user_id = serializers.IntegerField(source="user.id", read_only=True)
+    username = serializers.CharField(source="user.username", read_only=True)
+    email = serializers.EmailField(source="user.email", read_only=True)
+
+    class Meta(PaymentIntentSerializer.Meta):
+        fields = [
+            *PaymentIntentSerializer.Meta.fields,
+            "user_id",
+            "username",
+            "email",
         ]
         read_only_fields = fields
 
@@ -116,6 +162,11 @@ class OpsOrderRefundSerializer(OpsReversalIdempotentSerializer):
 class OpsTopupReversalSerializer(OpsReversalIdempotentSerializer):
     amount = serializers.IntegerField(min_value=1)
     reason_code = serializers.CharField(max_length=64, required=False, allow_blank=True)
+    note = serializers.CharField(max_length=255, required=False, allow_blank=True)
+
+
+class OpsManualTopupConfirmSerializer(OpsReversalIdempotentSerializer):
+    received_amount = serializers.IntegerField(min_value=1, required=False)
     note = serializers.CharField(max_length=255, required=False, allow_blank=True)
 
 

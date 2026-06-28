@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from email.utils import parseaddr
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -53,6 +54,25 @@ def _validate_configured_value(
         failures.append(f"{label} must be at least {min_length} characters long in staging/prod")
 
 
+def _email_domain(value: object) -> str:
+    _display_name, address = parseaddr(str(value or "").strip())
+    if "@" not in address:
+        return ""
+    return address.rsplit("@", 1)[-1].strip().lower()
+
+
+def _is_non_deliverable_email_domain(value: object) -> bool:
+    domain = _email_domain(value)
+    if not domain:
+        return True
+    return (
+        domain.endswith(".local")
+        or domain.endswith(".test")
+        or domain.endswith(".invalid")
+        or domain in {"example.com", "example.org", "example.net"}
+    )
+
+
 def _matches_iyzico_environment(*, app_env: str, iyzico_env: str, iyzico_base_url: str) -> list[str]:
     failures: list[str] = []
     normalized_env = str(iyzico_env or "").strip().lower()
@@ -77,6 +97,29 @@ def _matches_iyzico_environment(*, app_env: str, iyzico_env: str, iyzico_base_ur
     if normalized_env == "production" and not production_url:
         failures.append("IYZICO_BASE_URL must point to api.iyzipay.com when IYZICO_ENV=production")
     return failures
+
+
+def _validate_public_url_setting(*, label: str, value: str) -> list[str]:
+    normalized = str(value or "").strip()
+    if not normalized:
+        return [f"{label} must be configured in staging/prod"]
+    if normalized.startswith("/"):
+        if not normalized.endswith("/"):
+            return [f"{label} must end with / when configured as a path"]
+        return []
+
+    parsed = urlparse(normalized)
+    if parsed.scheme != "https" or not parsed.netloc:
+        return [f"{label} must be an https URL or an absolute path starting with /"]
+    if not normalized.endswith("/"):
+        return [f"{label} must end with /"]
+    return []
+
+
+def _uses_iyzico_money_provider() -> bool:
+    topup_provider = str(getattr(settings, "TOPUP_PROVIDER", "manual") or "manual").strip().lower()
+    payout_provider = str(getattr(settings, "PAYOUT_PROVIDER", "manual") or "manual").strip().lower()
+    return topup_provider == "iyzico" or payout_provider in {"iyzico", "iyzico_marketplace"}
 
 
 def collect_runtime_validation_failures(*, include_runtime_checks: bool = False) -> list[str]:
@@ -162,6 +205,28 @@ def collect_runtime_validation_failures(*, include_runtime_checks: bool = False)
     if canonical_origin and csrf_trusted_origins and canonical_origin not in csrf_trusted_origins:
         failures.append("CANONICAL_API_BASE_URL origin must be present in CSRF_TRUSTED_ORIGINS")
 
+    frontend_app_url = str(getattr(settings, "FRONTEND_APP_URL", "") or "").strip()
+    if not frontend_app_url:
+        failures.append("FRONTEND_APP_URL must be configured")
+    elif not frontend_app_url.startswith("https://"):
+        failures.append("FRONTEND_APP_URL must use https")
+    elif _is_placeholder(frontend_app_url):
+        failures.append("FRONTEND_APP_URL cannot use placeholder/example values")
+
+    failures.extend(_validate_public_url_setting(label="STATIC_URL", value=getattr(settings, "STATIC_URL", "")))
+    failures.extend(_validate_public_url_setting(label="MEDIA_URL", value=getattr(settings, "MEDIA_URL", "")))
+
+    static_root = Path(str(getattr(settings, "STATIC_ROOT", "") or "")).expanduser()
+    media_root = Path(str(getattr(settings, "MEDIA_ROOT", "") or "")).expanduser()
+    if not static_root:
+        failures.append("STATIC_ROOT must be configured")
+    if not media_root:
+        failures.append("MEDIA_ROOT must be configured")
+    if static_root and media_root and static_root.resolve() == media_root.resolve():
+        failures.append("STATIC_ROOT and MEDIA_ROOT must be different directories")
+    if int(getattr(settings, "MEDIA_ASSET_MAX_BYTES", 0) or 0) <= 0:
+        failures.append("MEDIA_ASSET_MAX_BYTES must be a positive integer")
+
     forwarded_allow_ips = str(os.getenv("GUNICORN_FORWARDED_ALLOW_IPS", "") or "").strip()
     if app_env == "prod" and not forwarded_allow_ips:
         failures.append("GUNICORN_FORWARDED_ALLOW_IPS must be explicitly configured in prod")
@@ -200,16 +265,59 @@ def collect_runtime_validation_failures(*, include_runtime_checks: bool = False)
     if getattr(settings, "FCM_PRIVATE_KEY", "") and "BEGIN PRIVATE KEY" not in str(getattr(settings, "FCM_PRIVATE_KEY", "")):
         failures.append("FCM_PRIVATE_KEY must contain a PEM private key")
 
-    _validate_configured_value(failures, label="IYZICO_API_KEY", value=getattr(settings, "IYZICO_API_KEY", ""), min_length=8)
-    _validate_configured_value(failures, label="IYZICO_SECRET_KEY", value=getattr(settings, "IYZICO_SECRET_KEY", ""), min_length=8)
-    _validate_configured_value(failures, label="IYZICO_BASE_URL", value=getattr(settings, "IYZICO_BASE_URL", ""), reject_placeholders=False)
-    failures.extend(
-        _matches_iyzico_environment(
-            app_env=app_env,
-            iyzico_env=getattr(settings, "IYZICO_ENV", ""),
-            iyzico_base_url=getattr(settings, "IYZICO_BASE_URL", ""),
+    email_backend = str(getattr(settings, "EMAIL_BACKEND", "") or "")
+    if bool(getattr(settings, "EMAIL_NOTIFICATIONS_ENABLED", False)):
+        if email_backend.endswith((".console.EmailBackend", ".locmem.EmailBackend", ".dummy.EmailBackend", ".filebased.EmailBackend")):
+            failures.append("EMAIL_BACKEND must be a real SMTP/provider backend when EMAIL_NOTIFICATIONS_ENABLED=True")
+        _validate_configured_value(
+            failures,
+            label="EMAIL_HOST",
+            value=getattr(settings, "EMAIL_HOST", ""),
+            reject_placeholders=False,
         )
-    )
+        if int(getattr(settings, "EMAIL_PORT", 0) or 0) <= 0:
+            failures.append("EMAIL_PORT must be a positive integer when EMAIL_NOTIFICATIONS_ENABLED=True")
+        _validate_configured_value(
+            failures,
+            label="DEFAULT_FROM_EMAIL",
+            value=getattr(settings, "DEFAULT_FROM_EMAIL", ""),
+            reject_placeholders=False,
+        )
+        if _is_non_deliverable_email_domain(getattr(settings, "DEFAULT_FROM_EMAIL", "")):
+            failures.append("DEFAULT_FROM_EMAIL must use a deliverable verified sender domain when EMAIL_NOTIFICATIONS_ENABLED=True")
+        _validate_configured_value(
+            failures,
+            label="NOTIFICATION_EMAIL_FROM",
+            value=getattr(settings, "NOTIFICATION_EMAIL_FROM", ""),
+            reject_placeholders=False,
+        )
+        if _is_non_deliverable_email_domain(getattr(settings, "NOTIFICATION_EMAIL_FROM", "")):
+            failures.append("NOTIFICATION_EMAIL_FROM must use a deliverable verified sender domain when EMAIL_NOTIFICATIONS_ENABLED=True")
+        if bool(getattr(settings, "EMAIL_USE_TLS", False)) and bool(getattr(settings, "EMAIL_USE_SSL", False)):
+            failures.append("EMAIL_USE_TLS and EMAIL_USE_SSL cannot both be True")
+
+    topup_provider = str(getattr(settings, "TOPUP_PROVIDER", "manual") or "manual").strip().lower()
+    if topup_provider not in {"manual", "halkyemek", "mock", "iyzico"}:
+        failures.append("TOPUP_PROVIDER must be manual or iyzico")
+    if topup_provider in {"manual", "halkyemek", "mock"}:
+        _validate_configured_value(
+            failures,
+            label="MANUAL_TOPUP_ACCOUNT_NAME",
+            value=getattr(settings, "MANUAL_TOPUP_ACCOUNT_NAME", ""),
+            reject_placeholders=False,
+        )
+
+    if _uses_iyzico_money_provider():
+        _validate_configured_value(failures, label="IYZICO_API_KEY", value=getattr(settings, "IYZICO_API_KEY", ""), min_length=8)
+        _validate_configured_value(failures, label="IYZICO_SECRET_KEY", value=getattr(settings, "IYZICO_SECRET_KEY", ""), min_length=8)
+        _validate_configured_value(failures, label="IYZICO_BASE_URL", value=getattr(settings, "IYZICO_BASE_URL", ""), reject_placeholders=False)
+        failures.extend(
+            _matches_iyzico_environment(
+                app_env=app_env,
+                iyzico_env=getattr(settings, "IYZICO_ENV", ""),
+                iyzico_base_url=getattr(settings, "IYZICO_BASE_URL", ""),
+            )
+        )
     _validate_configured_value(
         failures,
         label="PAYMENT_WEBHOOK_SECRET",

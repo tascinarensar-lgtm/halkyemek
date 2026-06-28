@@ -26,7 +26,6 @@ export function CategoryCard({ category, district }: { category: MarketplaceCate
         <CardContent className="space-y-3 p-5">
           <div className="flex items-start justify-between gap-3">
             <h3 className="text-base font-semibold text-zinc-950">{categoryName}</h3>
-            {category.is_other ? <span className="rounded-full bg-zinc-100 px-2 py-1 text-xs text-zinc-600">Diğer</span> : null}
           </div>
           <p className="text-sm leading-6 text-zinc-600">{categoryDescription}</p>
           <div className="flex items-center gap-2 pt-1 text-sm font-medium text-zinc-900 transition group-hover:text-zinc-700">

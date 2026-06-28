@@ -18,6 +18,8 @@ export function getTopupIntentDetail(intentId: string | number) {
 export function mapPaymentIntent(intent: PaymentIntent): TopupIntentViewModel {
   const normalized = String(intent.normalized_status || "").trim().toUpperCase();
   const rawStatus = String(intent.status || "").trim().toUpperCase();
+  const provider = String(intent.provider || "").trim().toUpperCase();
+  const isManualTopup = provider === "MOCK" || normalized.startsWith("MANUAL_");
 
   let tone: TopupIntentViewModel["statusTone"] = "default";
   let label = "Durum bilgisi hazırlanıyor";
@@ -25,6 +27,9 @@ export function mapPaymentIntent(intent: PaymentIntent): TopupIntentViewModel {
   if (intent.is_settled || normalized === "SETTLED" || normalized === "COMPLETED") {
     tone = "success";
     label = "Bakiyene yansıdı";
+  } else if (isManualTopup && normalized === "MANUAL_PENDING") {
+    tone = "warning";
+    label = "HalkYemek onayi bekliyor";
   } else if (rawStatus === "PAID" || normalized === "SUCCESS" || normalized === "PAID") {
     tone = "warning";
     label = "Ödeme alındı, bakiyeye hazırlanıyor";
@@ -54,6 +59,11 @@ export function mapPaymentIntent(intent: PaymentIntent): TopupIntentViewModel {
     processingError: intent.processing_error || null,
     isSettled: intent.is_settled,
     settledAt: intent.settled_at,
+    paymentReference: intent.payment_reference || intent.marketplace_conversation_id || `HY-PI-${intent.id}`,
+    manualPaymentAccountName: intent.manual_payment_account_name || null,
+    manualPaymentIban: intent.manual_payment_iban || null,
+    manualPaymentInstructions: Array.isArray(intent.manual_payment_instructions) ? intent.manual_payment_instructions : [],
+    isManualTopup,
     createdAt: intent.created_at,
     updatedAt: intent.updated_at,
     statusLabel: label,

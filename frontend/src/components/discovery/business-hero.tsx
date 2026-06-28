@@ -1,5 +1,6 @@
 import { MapPin, Sparkles, Store } from "lucide-react";
 
+import Image from "next/image";
 import { ButtonLink } from "@/components/ui/button-link";
 import { getBusinessIntroText, getBusinessListingTypeLabel } from "@/features/discovery/business-copy";
 import { getCategoryDisplayName } from "@/features/discovery/category-copy";
@@ -36,7 +37,7 @@ export function BusinessHero({
     <section className="overflow-hidden rounded-[30px] border border-zinc-200 bg-white shadow-sm">
       <div className="relative aspect-[16/7] bg-zinc-100">
         {cover ? (
-          <img src={cover} alt={businessName} className="h-full w-full object-cover" />
+          <Image src={cover} alt={businessName} fill unoptimized sizes="100vw" className="h-full w-full object-cover" />
         ) : (
           <div className="flex h-full items-center justify-center text-sm text-zinc-400">Kapak görseli yok</div>
         )}
@@ -44,9 +45,16 @@ export function BusinessHero({
         <div className="absolute inset-x-0 bottom-0 p-6 sm:p-8">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div className="flex items-end gap-4">
-              <div className="h-20 w-20 overflow-hidden rounded-3xl border border-white/25 bg-white/90 shadow-lg backdrop-blur">
+              <div className="relative h-20 w-20 overflow-hidden rounded-3xl border border-white/25 bg-white/90 shadow-lg backdrop-blur">
                 {business.logo_image ? (
-                  <img src={business.logo_image} alt={businessName} className="h-full w-full object-cover" />
+                  <Image
+                    src={business.logo_image}
+                    alt={businessName}
+                    fill
+                    unoptimized
+                    sizes="80px"
+                    className="h-full w-full object-cover"
+                  />
                 ) : (
                   <div className="flex h-full items-center justify-center text-xs text-zinc-500">Logo</div>
                 )}
@@ -74,7 +82,7 @@ export function BusinessHero({
               </div>
             </div>
             {showMenuCta ? (
-              <ButtonLink href={withSearchParams(`/isletmeler/${business.id}/menu`, { district })} className="bg-white text-zinc-950 hover:bg-zinc-100">
+              <ButtonLink href={withSearchParams(`/isletmeler/${business.id}`, { district })} className="bg-white text-zinc-950 hover:bg-zinc-100">
                 Menüye geç
               </ButtonLink>
             ) : null}

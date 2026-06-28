@@ -4,27 +4,17 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  AlertTriangle,
-  ArrowRight,
-  CheckCircle2,
-  LoaderCircle,
-  ShieldCheck,
-} from "lucide-react";
+import { AlertTriangle, ArrowRight, LoaderCircle, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 
 import { Card, CardContent } from "@/components/ui/card";
 import { PageContainer } from "@/components/ui/page-container";
 import { SectionHeader } from "@/components/ui/section-header";
 import { getApiErrorMessage, parseJsonResponse } from "@/lib/api/errors";
+import { clearAccountScopedQueries } from "@/lib/query/account-scope";
 import { SESSION_QUERY_KEY } from "@/lib/query/keys";
 
-type CallbackPhase =
-  | "verifying_identity"
-  | "creating_session"
-  | "redirecting"
-  | "missing_token"
-  | "error";
+type CallbackPhase = "verifying_identity" | "creating_session" | "redirecting" | "missing_token" | "error";
 
 function getSafeNextPath(candidate: string | null) {
   if (!candidate || !candidate.startsWith("/")) {
@@ -38,28 +28,28 @@ function getPhasePresentation(phase: CallbackPhase, message: string) {
   switch (phase) {
     case "creating_session":
       return {
-        title: "Oturumunuz hazirlaniyor",
+        title: "Hesabın hazırlanıyor...",
         description: message,
         icon: ShieldCheck,
         tone: "sky" as const,
       };
     case "redirecting":
       return {
-        title: "Yonlendiriliyorsunuz",
+        title: "Yönlendiriliyorsunuz...",
         description: message,
         icon: ArrowRight,
         tone: "emerald" as const,
       };
     case "missing_token":
       return {
-        title: "Giris bilgisi bulunamadi",
+        title: "Giriş bilgisi bulunamadı",
         description: message,
         icon: AlertTriangle,
         tone: "amber" as const,
       };
     case "error":
       return {
-        title: "Giris islemi tamamlanamadi",
+        title: "Giriş işlemi tamamlanamadı",
         description: message,
         icon: AlertTriangle,
         tone: "rose" as const,
@@ -67,7 +57,7 @@ function getPhasePresentation(phase: CallbackPhase, message: string) {
     case "verifying_identity":
     default:
       return {
-        title: "Kimlik dogrulaniyor",
+        title: "Giriş yapılıyor...",
         description: message,
         icon: LoaderCircle,
         tone: "zinc" as const,
@@ -107,7 +97,7 @@ export default function AuthCallbackPage() {
 
   const [phase, setPhase] = useState<CallbackPhase>("verifying_identity");
   const [phaseMessage, setPhaseMessage] = useState(
-    "Google hesabiniz dogrulaniyor. Oturumunuz hazirlandiktan sonra sizi kaldiginiz akisa yonlendirecegiz.",
+    "Google hesabın doğrulanıyor. Oturum hazırlandıktan sonra kaldığın ekrana yönlendirileceksin.",
   );
 
   useEffect(() => {
@@ -136,7 +126,7 @@ export default function AuthCallbackPage() {
 
     if (!idToken) {
       setPhase("missing_token");
-      setPhaseMessage("Giris bilgisi tamamlanmadi. Sizi giris ekranina yonlendirip islemi guvenli sekilde yeniden baslatacagiz.");
+      setPhaseMessage("Giriş bilgisi eksik. Seni güvenli şekilde giriş ekranına yönlendiriyoruz.");
       scheduleRedirect(`/giris?next=${encodeURIComponent(nextPath)}`, 900);
       return;
     }
@@ -146,7 +136,7 @@ export default function AuthCallbackPage() {
     void (async () => {
       try {
         setPhase("verifying_identity");
-        setPhaseMessage("Google hesabi dogrulaniyor. Kimlik bilgileriniz guvenli sekilde kontrol ediliyor.");
+        setPhaseMessage("Giriş yapılıyor. Google hesabın güvenli şekilde kontrol ediliyor.");
 
         const response = await fetch("/api/auth/login", {
           method: "POST",
@@ -155,14 +145,14 @@ export default function AuthCallbackPage() {
         });
 
         setPhase("creating_session");
-        setPhaseMessage("Oturumunuz olusturuluyor. Hesap bilgileriniz ve yetkileriniz guvenli sekilde hazirlaniyor.");
+        setPhaseMessage("Hesabın hazırlanıyor. Oturum bilgilerin oluşturuluyor.");
 
         const payload = await parseJsonResponse(response);
         if (!response.ok) {
           if (isActive) {
-            const errorMessage = getApiErrorMessage(payload ?? undefined, "Giris islemi tamamlanamadi.");
+            const errorMessage = getApiErrorMessage(payload ?? undefined, "Giriş işlemi tamamlanamadı.");
             setPhase("error");
-            setPhaseMessage(`${errorMessage} Sizi giris ekranina yonlendirip yeniden denemenizi saglayacagiz.`);
+            setPhaseMessage(`${errorMessage} Seni yeniden giriş ekranına yönlendireceğiz.`);
             toast.error(errorMessage);
             scheduleRedirect(`/giris?next=${encodeURIComponent(nextPath)}`, 1200);
           }
@@ -173,12 +163,13 @@ export default function AuthCallbackPage() {
           return;
         }
 
+        clearAccountScopedQueries(queryClient);
         queryClient.setQueryData(SESSION_QUERY_KEY, payload);
         void queryClient.invalidateQueries({ queryKey: SESSION_QUERY_KEY, refetchType: "none" });
 
         setPhase("redirecting");
-        setPhaseMessage("Giris islemi tamamlandi. Sizi uygun ekrana yonlendiriyoruz.");
-        toast.success("Giris tamamlandi.");
+        setPhaseMessage("Yönlendiriliyorsunuz. Giriş tamamlandı.");
+        toast.success("Giriş tamamlandı.");
         router.replace(nextPath);
         router.refresh();
       } catch (error) {
@@ -186,9 +177,9 @@ export default function AuthCallbackPage() {
           return;
         }
 
-        const errorMessage = getApiErrorMessage(error, "Giris islemi tamamlanamadi.");
+        const errorMessage = getApiErrorMessage(error, "Giriş işlemi tamamlanamadı.");
         setPhase("error");
-        setPhaseMessage(`${errorMessage} Kisa bir yonlendirme ile sizi yeniden giris ekranina alacagiz.`);
+        setPhaseMessage(`${errorMessage} Seni kısa süre içinde giriş ekranına alacağız.`);
         toast.error(errorMessage);
         scheduleRedirect(`/giris?next=${encodeURIComponent(nextPath)}`, 1200);
       }
@@ -208,16 +199,16 @@ export default function AuthCallbackPage() {
   const steps = useMemo(
     () => [
       {
-        title: "Kimlik dogrulama",
-        description: "Google hesabi ve giris bilgileri guvenli sekilde kontrol edilir.",
+        title: "Giriş yapılıyor",
+        description: "Google hesabın güvenli şekilde doğrulanır.",
       },
       {
-        title: "Oturum hazirlama",
-        description: "Hesap verileri ve erisim bilgileri sisteme tanimlanir.",
+        title: "Hesabın hazırlanıyor",
+        description: "Oturum bilgilerin sisteme tanımlanır.",
       },
       {
-        title: "Akisa donus",
-        description: "Islem tamamlandiginda uygun sayfaya otomatik yonlendirme yapilir.",
+        title: "Yönlendiriliyorsunuz",
+        description: "İşlem tamamlandığında otomatik yönlendirme yapılır.",
       },
     ],
     [],
@@ -226,8 +217,8 @@ export default function AuthCallbackPage() {
   return (
     <PageContainer className="max-w-4xl space-y-6">
       <SectionHeader
-        title="Giris islemi tamamlaniyor"
-        description="Hesabiniz dogrulaniyor, guvenli oturumunuz hazirlaniyor ve sizi HalkYemek icindeki uygun ekrana yonlendiriyoruz."
+        title="Giriş işlemi tamamlanıyor"
+        description="Hesabın doğrulanıyor ve seni kaldığın ekrana yönlendiriyoruz."
       />
 
       <Card className="overflow-hidden border-stone-200 bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.12),_transparent_34%),linear-gradient(180deg,_rgba(255,255,255,0.98),_rgba(248,250,252,0.96))] shadow-sm">
@@ -236,7 +227,7 @@ export default function AuthCallbackPage() {
             <div className="space-y-3">
               <div className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-medium text-sky-900">
                 <ShieldCheck className="h-3.5 w-3.5" />
-                Guvenli giris akisi
+                Güvenli giriş akışı
               </div>
               <div>
                 <h2 className="text-2xl font-semibold tracking-tight text-zinc-950">{phasePresentation.title}</h2>
@@ -274,9 +265,9 @@ export default function AuthCallbackPage() {
                   <PhaseIcon className={`h-5 w-5 ${phase === "verifying_identity" ? "animate-spin" : ""}`} />
                 </div>
                 <div>
-                  <h3 className="text-sm font-semibold text-zinc-950">Anlik durum</h3>
+                  <h3 className="text-sm font-semibold text-zinc-950">Anlık durum</h3>
                   <p className="mt-1 text-sm leading-6 text-zinc-600">
-                    Bu ekran giris akisi boyunca kisa sure gorunebilir. Islem tamamlandiginda yonlendirme otomatik olarak yapilir.
+                    İşlem tamamlanınca yönlendirme otomatik olarak yapılır.
                   </p>
                 </div>
               </div>
@@ -297,7 +288,7 @@ export default function AuthCallbackPage() {
 
               return (
                 <div key={step.title} className={`rounded-2xl border p-4 shadow-sm ${stateStyles}`}>
-                  <div className="text-xs font-medium uppercase tracking-[0.14em] text-zinc-500">Adim {index + 1}</div>
+                  <div className="text-xs font-medium uppercase tracking-[0.14em] text-zinc-500">Adım {index + 1}</div>
                   <div className="mt-2 text-base font-semibold text-zinc-950">{step.title}</div>
                   <p className="mt-2 text-sm leading-6 text-zinc-600">{step.description}</p>
                 </div>
@@ -313,11 +304,11 @@ export default function AuthCallbackPage() {
             <div>
               <h2 className="text-lg font-semibold text-zinc-950">Bu ekranda ne oluyor?</h2>
               <p className="mt-1 text-sm leading-6 text-zinc-600">
-                Google ile giris adiminin hemen ardindan hesabinizin kimlik bilgileri dogrulanir, oturumunuz olusturulur ve sizi kaldiginiz sayfaya guvenli sekilde geri dondururuz.
+                Google girişi tamamlanır, oturumun açılır ve kaldığın akışa geri dönersin.
               </p>
             </div>
             <div className="rounded-2xl bg-zinc-50 p-4 text-sm leading-6 text-zinc-600">
-              Islem normalde kisa surer. Ag gecikmesi veya oturum dogrulama suresi nedeniyle bu gecis ekranini birkac saniye gormeniz beklenir.
+              Bu ekran geçiş adımıdır ve normalde kısa sürer.
             </div>
           </CardContent>
         </Card>
@@ -327,12 +318,12 @@ export default function AuthCallbackPage() {
             <div>
               <h2 className="text-lg font-semibold text-zinc-950">Bir sorun olursa</h2>
               <p className="mt-1 text-sm leading-6 text-zinc-600">
-                Giris akisi tamamlanamazsa sizi yeniden giris ekranina yonlendiririz. Isterseniz beklemeden ilgili alanlara elle de gecis yapabilirsiniz.
+                İşlem tamamlanamazsa seni güvenli şekilde giriş ekranına yönlendiririz.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
               <Link href="/giris" className="rounded-xl bg-zinc-950 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800">
-                Giris ekranina don
+                Giriş ekranına dön
               </Link>
               <Link href="/" className="rounded-xl bg-zinc-100 px-4 py-2 text-sm font-medium text-zinc-900 hover:bg-zinc-200">
                 Ana sayfaya git

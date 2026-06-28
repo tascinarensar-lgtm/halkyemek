@@ -10,6 +10,11 @@ import { readSessionState } from "@/lib/auth/session";
 export const metadata: Metadata = {
   title: "HalkYemek",
   description: "Mahallendeki anlaşmalı işletmeleri keşfet, sepetini oluştur ve QR ile siparişini tamamla.",
+  icons: {
+    icon: "/hy-favicon.svg",
+    shortcut: "/hy-favicon.svg",
+    apple: "/hy-favicon.svg",
+  },
 };
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
@@ -17,7 +22,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
 
   return (
     <html lang="tr">
-      <body className="min-h-screen bg-stone-50 text-zinc-950 antialiased">
+      <body className="min-h-screen bg-[var(--background)] text-[var(--foreground)] antialiased">
         <QueryProvider>
           <SessionProvider initialSession={session}>
             <AppHeader />

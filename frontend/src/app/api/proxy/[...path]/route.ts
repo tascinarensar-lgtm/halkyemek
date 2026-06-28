@@ -9,6 +9,7 @@ const forbiddenProxyPrefixes = ["api/v1/auth/google/", "api/v1/auth/refresh/"];
 const refreshInFlight = new Map<string, Promise<string | null>>();
 const upstreamPathHeaderName = "x-hy-upstream-path";
 const multipartContentType = "multipart/form-data";
+const upstreamTimeoutMs = 15_000;
 
 function shouldBlockProxyPath(path: string) {
   return forbiddenProxyPrefixes.some((prefix) => path === prefix.replace(/\/$/, "") || path.startsWith(prefix));
@@ -32,6 +33,10 @@ function buildErrorResponse(status: number, code: string, message: string, reque
       },
     },
   );
+}
+
+function isAbortError(error: unknown) {
+  return error instanceof Error && error.name === "AbortError";
 }
 
 function trimLeadingSlashes(path: string) {
@@ -103,13 +108,20 @@ async function forwardRequest(
 ) {
   const search = request.nextUrl.search || "";
   const url = `${env.NEXT_PUBLIC_API_BASE_URL}/${path}${search}`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), upstreamTimeoutMs);
 
-  return fetch(url, {
-    method: request.method,
-    headers: buildProxyHeaders(request, token, options),
-    body: rawBody ? rawBody : undefined,
-    cache: "no-store",
-  });
+  try {
+    return await fetch(url, {
+      method: request.method,
+      headers: buildProxyHeaders(request, token, options),
+      body: rawBody ? rawBody : undefined,
+      cache: "no-store",
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function toClientResponse(response: Response) {
@@ -176,8 +188,10 @@ async function handle(request: NextRequest, params: { path: string[] }) {
   let response: Response;
   try {
     response = await forwardRequest(request, normalizedPath, token, rawBody, { omitContentType: isMultipart });
-  } catch {
-    return buildErrorResponse(502, "proxy_network_error", "Backend proxy isteği tamamlanamadı.");
+  } catch (error) {
+    return isAbortError(error)
+      ? buildErrorResponse(504, "proxy_upstream_timeout", "Sunucu yanıtı zamanında tamamlanmadı. Lütfen tekrar dene.")
+      : buildErrorResponse(502, "proxy_network_error", "Backend proxy isteği tamamlanamadı.");
   }
 
   if (response.status === 401) {
@@ -189,8 +203,10 @@ async function handle(request: NextRequest, params: { path: string[] }) {
     token = refreshedToken;
     try {
       response = await forwardRequest(request, normalizedPath, token, rawBody, { omitContentType: isMultipart });
-    } catch {
-      return buildErrorResponse(502, "proxy_network_error", "Backend proxy isteği tamamlanamadı.");
+    } catch (error) {
+      return isAbortError(error)
+        ? buildErrorResponse(504, "proxy_upstream_timeout", "Sunucu yanıtı zamanında tamamlanmadı. Lütfen tekrar dene.")
+        : buildErrorResponse(502, "proxy_network_error", "Backend proxy isteği tamamlanamadı.");
     }
 
     if (response.status === 401) {

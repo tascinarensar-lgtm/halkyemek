@@ -3,13 +3,23 @@ import { authenticatedApiFetch } from "@/lib/api/authenticated-client";
 import type {
   ApiDataEnvelope,
   BroadcastInput,
+  EmailBroadcastPayload,
+  EmailBroadcastPreviewResponse,
+  EmailBroadcastQueueResponse,
+  OpsBusinessCreateInput,
+  OpsBusinessCreateResponse,
   OpsBusinessDetail,
   OpsBusinessMembership,
   OpsBusinessMembershipUpsertInput,
   OpsBusinessesListResponse,
   OpsBusinessStatusInput,
   OpsDashboardData,
+  OpsManualTopupConfirmResponse,
   OpsMetricsData,
+  OpsPaymentIntentListResponse,
+  OpsSurpriseDealDetailResponse,
+  OpsSurpriseDealItem,
+  OpsSurpriseDealListResponse,
   PayoutItem,
   ReconcileResponse,
   SettlementDashboardData,
@@ -18,6 +28,17 @@ import type {
   SettlementRecordDetailResponse,
   SettlementRecordListResponse,
 } from "@/features/ops-console/types";
+
+export type OpsBusinessProduct = "halkyemek" | "halktasarruf";
+export type OpsBusinessListParams = {
+  product?: OpsBusinessProduct;
+  q?: string;
+  district?: string;
+  is_active?: boolean;
+  is_approved?: boolean;
+  is_listed?: boolean;
+  payout_onboarding_status?: string;
+};
 
 function qs(params: Record<string, string | number | boolean | undefined | null>) {
   const search = new URLSearchParams();
@@ -36,7 +57,10 @@ async function getEnvelope<T>(path: string) {
 
 export const getOpsDashboard = () => getEnvelope<OpsDashboardData>("/api/v1/ops/dashboard/");
 export const getOpsMetrics = () => getEnvelope<OpsMetricsData>("/api/v1/ops/metrics/");
-export const listOpsBusinesses = (params: Record<string, string | number | boolean | undefined | null>) => getEnvelope<OpsBusinessesListResponse>(`/api/v1/ops/businesses/${qs(params)}`);
+export const listOpsPaymentIntents = (params: Record<string, string | number | boolean | undefined | null>) => getEnvelope<OpsPaymentIntentListResponse>(`/api/v1/payments/ops/intents/${qs(params)}`);
+export const confirmManualTopup = (intentId: string | number, input: { received_amount?: number; note?: string; idempotency_key?: string }) => authenticatedApiFetch<ApiDataEnvelope<OpsManualTopupConfirmResponse>>(`/api/v1/payments/ops/intents/${intentId}/manual-topup-confirm/`, { method: "POST", useIdempotencyKey: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...input, idempotency_key: input.idempotency_key || `manual-topup-${intentId}-${Date.now()}` }) });
+export const listOpsBusinesses = (params: OpsBusinessListParams) => getEnvelope<OpsBusinessesListResponse>(`/api/v1/ops/businesses/${qs(params)}`);
+export const createOpsBusiness = (input: OpsBusinessCreateInput) => authenticatedApiFetch<ApiDataEnvelope<OpsBusinessCreateResponse>>("/api/v1/ops/businesses/", { method: "POST", useIdempotencyKey: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) });
 export const getOpsBusinessDetail = (businessId: string | number) => getEnvelope<OpsBusinessDetail>(`/api/v1/ops/businesses/${businessId}/`);
 export const listOpsBusinessMemberships = (businessId: string | number) => getEnvelope<OpsBusinessMembership[]>(`/api/v1/ops/businesses/${businessId}/memberships/`);
 export const upsertOpsBusinessMembership = (businessId: string | number, input: OpsBusinessMembershipUpsertInput) => authenticatedApiFetch<ApiDataEnvelope<Record<string, unknown>>>(`/api/v1/ops/businesses/${businessId}/memberships/`, { method: "POST", useIdempotencyKey: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) });
@@ -62,3 +86,7 @@ export const getSettlementRecordDetail = (recordId: string | number) => getEnvel
 export const reprocessSettlementRecord = (recordId: string | number) => authenticatedApiFetch<Record<string, unknown>>(`/api/v1/payments/ops/settlement/records/${recordId}/reprocess/`, { method: "POST", useIdempotencyKey: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
 export const reviewSettlementRecord = (recordId: string | number, input: { review_status?: string; operator_note?: string }) => authenticatedApiFetch<Record<string, unknown>>(`/api/v1/payments/ops/settlement/records/${recordId}/review/`, { method: "PATCH", useIdempotencyKey: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) });
 export const queueBroadcast = (input: BroadcastInput) => authenticatedApiFetch<Record<string, unknown>>("/api/v1/notifications/admin/broadcast/", { method: "POST", useIdempotencyKey: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) });
+export const queueEmailBroadcast = (input: EmailBroadcastPayload) => authenticatedApiFetch<EmailBroadcastPreviewResponse | EmailBroadcastQueueResponse>("/api/v1/notifications/admin/email-broadcast/", { method: "POST", useIdempotencyKey: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) });
+export const listOpsSurpriseDeals = (params: Record<string, string | number | boolean | undefined | null>) => getEnvelope<OpsSurpriseDealListResponse>(`/api/v1/ops/surprise-deals/${qs(params)}`);
+export const getOpsSurpriseDealDetail = (dealId: string | number) => getEnvelope<OpsSurpriseDealDetailResponse>(`/api/v1/ops/surprise-deals/${dealId}/`);
+export const closeOpsSurpriseDeal = (dealId: string | number) => authenticatedApiFetch<ApiDataEnvelope<OpsSurpriseDealItem>>(`/api/v1/ops/surprise-deals/${dealId}/close/`, { method: "POST", useIdempotencyKey: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });

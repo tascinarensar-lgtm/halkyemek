@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Iterable
@@ -17,20 +17,58 @@ class MarketplaceBootstrapItem:
 
 DEFAULT_MARKETPLACE_BOOTSTRAP: dict[str, tuple[MarketplaceBootstrapItem, ...]] = {
     BusinessProfile.District.BEYLIKDUZU: (
-        MarketplaceBootstrapItem("tavuk-doner", "Tavuk Döner", "Uygun fiyatlı tavuk döner ve pratik menü seçenekleri.", 10),
-        MarketplaceBootstrapItem("et-doner", "Et Döner", "Et döner sevenler için doyurucu ve avantajlı menüler.", 20),
-        MarketplaceBootstrapItem("burger", "Burger", "Klasik ve özel burger menülerini bir araya getiren kategori.", 30),
-        MarketplaceBootstrapItem("pizza", "Pizza", "Farklı boy ve içeriklerde pizza seçenekleri.", 40),
-        MarketplaceBootstrapItem("pilav-tencere-yemekleri", "Pilav & Tencere Yemekleri", "Pilav, tencere yemekleri ve doyurucu tabaklar.", 50),
-        MarketplaceBootstrapItem("ev-yemekleri", "Ev Yemekleri", "Esnaf usulü günlük menüler ve ev yemeği seçenekleri.", 60),
-        MarketplaceBootstrapItem("kebap", "Kebap", "Kebap ve ızgara çeşitlerini bir araya getiren kategori.", 70),
-        MarketplaceBootstrapItem("diger", "Diğer", "Diğer tüm özel veya ayrı sınıflanan işletmeler.", 80, is_other=True),
+        MarketplaceBootstrapItem("burger", "Burger", "Burger menulerini tek katalogda toplayan resmi HalkYemek kategorisi.", 10),
+        MarketplaceBootstrapItem("pizza", "Pizza", "Pizza menulerini tek katalogda toplayan resmi HalkYemek kategorisi.", 20),
+        MarketplaceBootstrapItem("doner", "Döner", "Doner menulerini tek katalogda toplayan resmi HalkYemek kategorisi.", 30),
+        MarketplaceBootstrapItem("kebap", "Kebap", "Kebap menulerini tek katalogda toplayan resmi HalkYemek kategorisi.", 40),
     ),
 }
+
+HALKYEMEK_CATEGORY_NAMES = tuple(item.name for item in DEFAULT_MARKETPLACE_BOOTSTRAP[BusinessProfile.District.BEYLIKDUZU])
+HALKTASARRUF_CATEGORY_NAMES = (
+    "Fırın & Pastane",
+    "Kafe & Kahve Zincirleri",
+    "Marketler",
+    "Fast Food Restoranları",
+    "Döner-Kebap İşletmeleri",
+)
+OFFICIAL_MARKETPLACE_CATEGORY_NAMES = HALKYEMEK_CATEGORY_NAMES
 
 
 def district_bootstrap_items(district: str) -> tuple[MarketplaceBootstrapItem, ...]:
     return DEFAULT_MARKETPLACE_BOOTSTRAP.get(district, ())
+
+
+def normalize_official_business_category(value: str) -> str:
+    text = " ".join((value or "").split())
+    for name in OFFICIAL_MARKETPLACE_CATEGORY_NAMES:
+        if text.casefold() == name.casefold():
+            return name
+    allowed = ", ".join(OFFICIAL_MARKETPLACE_CATEGORY_NAMES)
+    raise ValueError(f"Kategori yalnızca şu resmi kategorilerden biri olabilir: {allowed}.")
+
+
+def normalize_business_category_for_products(
+    value: str,
+    *,
+    supports_halkyemek: bool,
+    supports_halktasarruf: bool,
+) -> str:
+    text = " ".join((value or "").split())
+    allowed_names: list[str] = []
+    if supports_halkyemek:
+        allowed_names.extend(HALKYEMEK_CATEGORY_NAMES)
+    if supports_halktasarruf:
+        allowed_names.extend(HALKTASARRUF_CATEGORY_NAMES)
+    if not allowed_names:
+        raise ValueError("En az bir ürün desteği seçilmelidir.")
+
+    for name in allowed_names:
+        if text.casefold() == name.casefold():
+            return name
+
+    allowed = ", ".join(dict.fromkeys(allowed_names))
+    raise ValueError(f"Kategori seçilen ürün için yalnızca şu kategorilerden biri olabilir: {allowed}.")
 
 
 def seed_marketplace_categories(*, district: str, overwrite_descriptions: bool = False) -> dict[str, object]:
@@ -81,12 +119,23 @@ def seed_marketplace_categories(*, district: str, overwrite_descriptions: bool =
         else:
             untouched += 1
 
+    official_slugs = {item.slug for item in items}
+    deactivated = MarketplaceCategory.objects.filter(
+        district=district,
+        is_active=True,
+    ).exclude(slug__in=official_slugs).update(is_active=False)
+
     return {
         "district": district,
         "expected_count": len(items),
         "created": created,
         "updated": updated,
         "untouched": untouched,
+        "deactivated": deactivated,
         "created_slugs": created_slugs,
         "updated_slugs": updated_slugs,
     }
+
+
+def expected_bootstrap_slugs(district: str) -> Iterable[str]:
+    return (item.slug for item in district_bootstrap_items(district))

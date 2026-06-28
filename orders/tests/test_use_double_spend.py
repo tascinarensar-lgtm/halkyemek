@@ -36,7 +36,7 @@ class DoubleSpendRegressionTests(TestCase):
 
         self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 409)
-        self.assertEqual(second.data["code"], "checkout_session_already_consumed")
-        self.assertEqual(second.data["order_id"], first.data["order_id"])
+        self.assertEqual(second.data["error"]["code"], "checkout_session_already_consumed")
+        self.assertEqual(second.data["error"]["details"]["order_id"], first.data["order_id"])
         self.assertEqual(Order.objects.count(), 1)
         self.assertEqual(WalletTransaction.objects.filter(order__isnull=False, transaction_type=WalletTransaction.Type.PURCHASE).count(), 1)

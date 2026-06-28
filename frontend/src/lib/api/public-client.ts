@@ -1,6 +1,7 @@
 import { env } from "@/lib/config/env";
 import { createRequestId } from "@/lib/utils/request";
 import { parseJsonResponse, toApiClientError } from "@/lib/api/errors";
+import { repairTextPayload } from "@/lib/utils/text";
 
 export async function publicApiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
@@ -23,5 +24,5 @@ export async function publicApiFetch<T>(path: string, init?: RequestInit): Promi
     throw await toApiClientError(response);
   }
 
-  return ((await parseJsonResponse<T>(response)) ?? null) as T;
+  return repairTextPayload(((await parseJsonResponse<T>(response)) ?? null) as T);
 }

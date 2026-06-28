@@ -35,6 +35,7 @@ function formatProvider(provider: string) {
   const normalized = String(provider || "").trim().toUpperCase();
   if (!normalized) return "Belirlenmedi";
   if (normalized === "IYZICO") return "iyzico";
+  if (normalized === "MOCK") return "HalkYemek";
   return provider;
 }
 
@@ -330,7 +331,7 @@ export default function TopupResultPage() {
               <Link href="/cuzdan" className="inline-flex items-center justify-center rounded-xl bg-zinc-950 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800">
                 Cüzdan özetine dön
               </Link>
-              <Link href="/cuzdan/yukle" className="inline-flex items-center justify-center rounded-xl bg-zinc-100 px-4 py-2 text-sm font-medium text-zinc-900 hover:bg-zinc-200">
+              <Link href="/cuzdan?topup=1" className="inline-flex items-center justify-center rounded-xl bg-zinc-100 px-4 py-2 text-sm font-medium text-zinc-900 hover:bg-zinc-200">
                 Yeni bakiye yükleme başlat
               </Link>
               <Link href="/cuzdan/hareketler" className="inline-flex items-center justify-center rounded-xl bg-zinc-100 px-4 py-2 text-sm font-medium text-zinc-900 hover:bg-zinc-200">

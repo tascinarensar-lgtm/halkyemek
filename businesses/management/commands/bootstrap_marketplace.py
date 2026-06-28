@@ -35,6 +35,7 @@ class Command(BaseCommand):
             self.style.SUCCESS(
                 "Bootstrap completed: "
                 f"district={summary['district']} expected={summary['expected_count']} "
-                f"created={summary['created']} updated={summary['updated']} untouched={summary['untouched']}"
+                f"created={summary['created']} updated={summary['updated']} "
+                f"untouched={summary['untouched']} deactivated={summary['deactivated']}"
             )
         )

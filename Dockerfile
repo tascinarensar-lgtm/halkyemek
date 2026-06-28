@@ -15,7 +15,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . /app/
 
 RUN useradd --create-home --shell /bin/bash appuser \
-    && mkdir -p /app/staticfiles \
+    && mkdir -p /app/staticfiles /app/media \
     && chmod 755 /app/scripts/*.sh \
     && chown -R appuser:appuser /app
 

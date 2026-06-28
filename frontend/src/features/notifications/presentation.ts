@@ -1,4 +1,4 @@
-import type { BrowserNotificationState } from "@/features/notifications/types";
+﻿import type { BrowserNotificationState } from "@/features/notifications/types";
 
 export interface BrowserNotificationPresentation {
   label: string;
@@ -17,31 +17,31 @@ export function getBrowserPermissionPresentation(browserState: BrowserNotificati
     return {
       label: "Kontrol ediliyor",
       tone: "default",
-      description: "Tarayici destegi ve izin durumu dogrulaniyor.",
+      description: "Tarayıcı desteği ve izin durumu doğrulanıyor.",
     };
   }
 
   if (!browserState.configured) {
     return {
-      label: "Yapilandirma eksik",
+      label: "Yapılandırma eksik",
       tone: "warning",
-      description: "Firebase web push ayarlari tamamlanmadan canli bildirim alinamaz.",
+      description: "Firebase web push ayarları tamamlanmadan canlı bildirim alınamaz.",
     };
   }
 
   if (!browserState.secureContext) {
     return {
-      label: "Guvenli baglanti gerekli",
+      label: "Güvenli bağlantı gerekli",
       tone: "warning",
-      description: "Bildirimler icin siteyi HTTPS veya localhost uzerinden acmaniz gerekir.",
+      description: "Bildirimler için siteyi HTTPS veya localhost üzerinden açman gerekir.",
     };
   }
 
   if (browserState.environment === "in_app_browser") {
     return {
-      label: "Tarayicida acin",
+      label: "Tarayıcıda aç",
       tone: "warning",
-      description: `Bu sayfa ${browserState.hostAppLabel || "uygulama ici tarayici"} uzerinde acik. Canli bildirim icin baglantiyi ${browserState.recommendedBrowserLabel || "desteklenen tarayici"} ile acmaniz gerekir.`,
+      description: `Bu sayfa ${browserState.hostAppLabel || "uygulama içi tarayıcı"} üzerinde açık. Canlı bildirim için bağlantıyı ${browserState.recommendedBrowserLabel || "desteklenen tarayıcı"} ile açman gerekir.`,
     };
   }
 
@@ -49,36 +49,36 @@ export function getBrowserPermissionPresentation(browserState: BrowserNotificati
     return {
       label: "Ana ekrana ekleyin",
       tone: "warning",
-      description: "iPhone ve iPad cihazlarda canli bildirim icin HalkYemek'i Safari'de acip Ana Ekrana Ekle adimini tamamlamaniz gerekir.",
+      description: "iPhone ve iPad cihazlarda canlı bildirim için HalkYemek'i Safari'de açıp Ana Ekrana Ekle adımını tamamlaman gerekir.",
     };
   }
 
   if (!browserState.supported) {
     return {
-      label: "Tarayici desteklemiyor",
+      label: "Tarayıcı desteklemiyor",
       tone: "danger",
-      description: "Bu tarayici canli web bildirimi desteği sunmuyor.",
+      description: "Bu tarayıcı canlı web bildirimi desteği sunmuyor.",
     };
   }
 
   switch (browserState.permission) {
     case "granted":
       return {
-        label: "Izin verildi",
+        label: "İzin verildi",
         tone: "success",
-        description: "Tarayici bildirim izni acik ve canli bildirim almaya uygun.",
+        description: "Tarayıcı bildirim izni açık ve canlı bildirim almaya uygun.",
       };
     case "denied":
       return {
-        label: "Izin kapali",
+        label: "İzin kapalı",
         tone: "danger",
-        description: "Tarayici ayarlarindan HalkYemek icin bildirimi yeniden acmaniz gerekir.",
+        description: "Tarayıcı ayarlarından HalkYemek için bildirimi yeniden açman gerekir.",
       };
     default:
       return {
-        label: "Izin bekleniyor",
+        label: "İzin bekleniyor",
         tone: "warning",
-        description: "Tarayicida henuz bildirim izni verilmedi.",
+        description: "Tarayıcıda henüz bildirim izni verilmedi.",
       };
   }
 }
@@ -89,35 +89,35 @@ export function getBrowserGuidance(browserState: BrowserNotificationState | unde
   }
 
   if (browserState.environment === "in_app_browser") {
-    const targetBrowser = browserState.recommendedBrowserLabel || "desteklenen tarayici";
-    const hostApp = browserState.hostAppLabel || "uygulama ici tarayici";
+    const targetBrowser = browserState.recommendedBrowserLabel || "desteklenen tarayıcı";
+    const hostApp = browserState.hostAppLabel || "uygulama içi tarayıcı";
     const appleSteps = [
-      `${hostApp} icindeki paylas veya menu alanindan sayfayi Safari'de acin.`,
-      "Safari acildiktan sonra isterseniz Paylas > Ana Ekrana Ekle adimini tamamlayin.",
-      "Ardindan Bildirimler sayfasina donup bu cihazi hazirlayin.",
+      `${hostApp} içindeki paylaş veya menü alanından sayfayı Safari'de aç.`,
+      "Safari açıldıktan sonra istersen Paylaş > Ana Ekrana Ekle adımını tamamla.",
+      "Ardından Bildirimler sayfasına dönüp bu cihazı hazırla.",
     ];
     const defaultSteps = [
-      `${hostApp} icindeki menu alanindan sayfayi ${targetBrowser} ile acin.`,
-      "Acilan tarayicida Bildirimler sayfasina donun.",
-      "Bu cihazi hazirla diyerek izni verin.",
+      `${hostApp} içindeki menü alanından sayfayı ${targetBrowser} ile aç.`,
+      "Açılan tarayıcıda Bildirimler sayfasına dön.",
+      "Bildirim iznini aç diyerek izni ver.",
     ];
 
     return {
-      title: `${hostApp} ic tarayicisinda canli bildirim acilamaz`,
-      description: `HalkYemek bildirimleri icin sayfayi ${targetBrowser} gibi desteklenen tarayicida acmaniz gerekir.`,
+      title: `${hostApp} içinde canlı bildirim açılamaz`,
+      description: `HalkYemek bildirimleri için sayfayı ${targetBrowser} gibi desteklenen bir tarayıcıda açman gerekir.`,
       steps: browserState.isAppleMobile ? appleSteps : defaultSteps,
     };
   }
 
   if (browserState.environment === "ios_home_screen_required") {
     return {
-      title: "iPhone ve iPad icin Ana Ekrana Ekle gerekli",
-      description: "Apple mobil cihazlarda web push bildirimleri en saglikli sekilde Ana Ekrana eklenen HalkYemek simgesi uzerinden calisir.",
+      title: "iPhone ve iPad için Ana Ekrana Ekle gerekli",
+      description: "Apple mobil cihazlarda web push bildirimleri en sağlıklı şekilde Ana Ekrana eklenen HalkYemek simgesi üzerinden çalışır.",
       steps: [
-        "Sayfayi Safari ile acin.",
-        "Paylas menusu icinden Ana Ekrana Ekle secenegini secin.",
-        "Ana ekrana eklenen HalkYemek simgesinden siteyi yeniden acin.",
-        "Bildirimler ekraninda bu cihazi hazirlayin ve izni verin.",
+        "Sayfayı Safari ile aç.",
+        "Paylaş menüsü içinden Ana Ekrana Ekle seçeneğini seç.",
+        "Ana ekrana eklenen HalkYemek simgesinden siteyi yeniden aç.",
+        "Bildirimler ekranında bildirim iznini aç.",
       ],
     };
   }

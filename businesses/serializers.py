@@ -1,6 +1,7 @@
 from typing import Optional
 
 from rest_framework import serializers
+from businesses.api.location_validation import decimal_to_float
 from businesses.models import (
     BusinessCategoryAssignment,
     BusinessProfile,
@@ -27,18 +28,28 @@ def _media_url_for_business(obj: BusinessProfile, role: str) -> str:
 class PublicBusinessSerializer(serializers.ModelSerializer):
     district_label = serializers.SerializerMethodField()
     listing_type_label = serializers.SerializerMethodField()
+    latitude = serializers.SerializerMethodField()
+    longitude = serializers.SerializerMethodField()
     short_description = serializers.CharField(read_only=True)
     intro_text = serializers.CharField(read_only=True)
     badge_text = serializers.CharField(read_only=True)
     cover_image = serializers.SerializerMethodField()
     logo_image = serializers.SerializerMethodField()
     primary_marketplace_category = serializers.SerializerMethodField()
+    menu_quota_item_count = serializers.SerializerMethodField()
+    menu_quota_remaining = serializers.SerializerMethodField()
+    menu_quota_label = serializers.SerializerMethodField()
+    menu_quota_is_sold_out = serializers.SerializerMethodField()
 
     class Meta:
         model = BusinessProfile
         fields = [
             "id",
             "business_name",
+            "address_line",
+            "latitude",
+            "longitude",
+            "google_maps_url",
             "district",
             "district_label",
             "listing_type",
@@ -50,6 +61,10 @@ class PublicBusinessSerializer(serializers.ModelSerializer):
             "cover_image",
             "logo_image",
             "primary_marketplace_category",
+            "menu_quota_item_count",
+            "menu_quota_remaining",
+            "menu_quota_label",
+            "menu_quota_is_sold_out",
         ]
 
     def get_district_label(self, obj) -> str:
@@ -57,6 +72,12 @@ class PublicBusinessSerializer(serializers.ModelSerializer):
 
     def get_listing_type_label(self, obj) -> str:
         return obj.get_listing_type_display()
+
+    def get_latitude(self, obj) -> float | None:
+        return decimal_to_float(obj.latitude)
+
+    def get_longitude(self, obj) -> float | None:
+        return decimal_to_float(obj.longitude)
 
     def get_cover_image(self, obj) -> str:
         return _media_url_for_business(obj, MediaAsset.AssetRole.COVER)
@@ -89,13 +110,40 @@ class PublicBusinessSerializer(serializers.ModelSerializer):
             "is_other": category.is_other,
         }
 
+    def get_menu_quota_item_count(self, obj) -> int:
+        return int(getattr(obj, "public_menu_quota_item_count", 0) or 0)
+
+    def get_menu_quota_remaining(self, obj) -> int | None:
+        if self.get_menu_quota_item_count(obj) <= 0:
+            return None
+        return int(getattr(obj, "public_menu_quota_remaining_total", 0) or 0)
+
+    def get_menu_quota_label(self, obj) -> str | None:
+        remaining = self.get_menu_quota_remaining(obj)
+        if remaining is None:
+            return None
+        if remaining <= 0:
+            return "Hepsi tükendi"
+        return f"{remaining} adet bulunmakta"
+
+    def get_menu_quota_is_sold_out(self, obj) -> bool:
+        remaining = self.get_menu_quota_remaining(obj)
+        return remaining is not None and remaining <= 0
+
 
 class BusinessPanelSerializer(serializers.ModelSerializer):
+    latitude = serializers.SerializerMethodField()
+    longitude = serializers.SerializerMethodField()
+
     class Meta:
         model = BusinessProfile
         fields = [
             "id",
             "business_name",
+            "address_line",
+            "latitude",
+            "longitude",
+            "google_maps_url",
             "district",
             "listing_type",
             "is_featured",
@@ -105,6 +153,12 @@ class BusinessPanelSerializer(serializers.ModelSerializer):
             "is_listed",
             "marketplace_is_visible",
         ]
+
+    def get_latitude(self, obj) -> float | None:
+        return decimal_to_float(obj.latitude)
+
+    def get_longitude(self, obj) -> float | None:
+        return decimal_to_float(obj.longitude)
 
 
 class MarketplaceCategorySerializer(serializers.ModelSerializer):

@@ -147,12 +147,12 @@ function GoogleIdentityButton({
         className={`flex min-h-11 w-full items-center justify-center transition-opacity duration-200 ${ready ? "opacity-100" : "opacity-0"}`}
       />
       {!ready ? (
-        <div className="absolute inset-0 flex items-center justify-center gap-2 rounded-inherit bg-white text-sm text-zinc-500">
+        <div className="absolute inset-0 flex items-center justify-center gap-2 rounded-[inherit] bg-white text-sm text-zinc-500">
           <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-emerald-500" />
           {loadingLabel}
         </div>
       ) : null}
-      {pending ? <div className="absolute inset-0 rounded-inherit bg-white/70" aria-hidden="true" /> : null}
+      {pending ? <div className="absolute inset-0 rounded-[inherit] bg-white/70" aria-hidden="true" /> : null}
     </div>
   );
 }
@@ -231,44 +231,50 @@ export function LoginForm({ mode = "page", nextPath: nextPathOverride }: { mode?
         <div className="mx-auto flex w-full max-w-[332px] flex-col space-y-5">
           <div className="space-y-1.5 text-center">
             <h3 className="text-3xl font-semibold tracking-tight text-zinc-900">Hoş geldin!</h3>
-            <p className="text-sm text-zinc-600">Devam etmek için kayıt ol ya da giriş yap.</p>
+            <p className="text-sm text-zinc-600">Devam etmek için kayıt ol ya da giriş yap</p>
           </div>
 
-          <GoogleIdentityButton
-            text="continue_with"
-            ready={googleReady}
-            pending={loginMutation.isPending}
-            onCredential={handleCredential}
-            className="min-h-[58px] overflow-hidden rounded-[14px] border border-zinc-300 bg-white px-3 py-2 text-center shadow-[0_10px_24px_rgba(15,23,42,0.05)]"
-          />
+          <div className="rounded-[14px] border border-zinc-300 bg-white p-1.5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+            <GoogleIdentityButton
+              text="continue_with"
+              ready={googleReady}
+              pending={loginMutation.isPending}
+              onCredential={handleCredential}
+              className="min-h-[58px] overflow-hidden rounded-[12px] bg-white px-2 py-2"
+            />
+          </div>
 
           <div className="flex items-center gap-3 text-xs text-zinc-400">
             <div className="h-px flex-1 bg-zinc-200" />
-            <span>veya</span>
+            <span>ya da</span>
             <div className="h-px flex-1 bg-zinc-200" />
           </div>
 
           <div className="space-y-3">
-            <div className="rounded-2xl border border-zinc-200 bg-white p-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-              <div className="mb-2 text-sm font-semibold text-zinc-900">Giriş Yap</div>
-              <GoogleIdentityButton
-                text="signin_with"
-                ready={googleReady}
-                pending={loginMutation.isPending}
-                onCredential={handleCredential}
-                className="min-h-[54px] overflow-hidden rounded-xl border border-zinc-200 bg-zinc-50 px-2 py-2"
-                loadingLabel="Google girişi yükleniyor..."
-              />
+            <div className="rounded-[18px] bg-rose-600 p-[1px] shadow-[0_16px_32px_rgba(225,29,72,0.2)]">
+              <div className="rounded-[17px] bg-rose-600 px-4 py-3 text-white">
+                <div className="text-sm font-semibold">Giriş Yap</div>
+                <div className="mt-1 text-xs text-rose-100">Mevcut hesabınla hızlıca devam et.</div>
+                <GoogleIdentityButton
+                  text="signin_with"
+                  ready={googleReady}
+                  pending={loginMutation.isPending}
+                  onCredential={handleCredential}
+                  className="mt-3 min-h-[54px] overflow-hidden rounded-xl bg-white px-2 py-2"
+                  loadingLabel="Google girişi yükleniyor..."
+                />
+              </div>
             </div>
 
-            <div className="rounded-2xl border border-zinc-200 bg-white p-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-              <div className="mb-2 text-sm font-semibold text-zinc-900">Kayıt Ol</div>
+            <div className="rounded-[18px] border border-zinc-300 bg-white p-4 shadow-[0_14px_32px_rgba(15,23,42,0.08)]">
+              <div className="text-sm font-semibold text-zinc-900">Kayıt Ol</div>
+              <div className="mt-1 text-xs text-zinc-500">İlk siparişin için hesabını birkaç saniyede oluştur.</div>
               <GoogleIdentityButton
                 text="signup_with"
                 ready={googleReady}
                 pending={loginMutation.isPending}
                 onCredential={handleCredential}
-                className="min-h-[54px] overflow-hidden rounded-xl border border-zinc-200 bg-zinc-50 px-2 py-2"
+                className="mt-3 min-h-[54px] overflow-hidden rounded-xl bg-zinc-50 px-2 py-2"
                 loadingLabel="Google kaydı yükleniyor..."
               />
             </div>

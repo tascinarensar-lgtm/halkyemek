@@ -42,15 +42,13 @@ type GoogleIdentityButtonProps = {
   ready: boolean;
   pending: boolean;
   onCredential: (response: GoogleCredentialResponse) => void;
-  className: string;
+  className?: string;
   loadingLabel?: string;
   visualLabel?: string;
-  visualHint?: string;
-  compact?: boolean;
+  emphasized?: boolean;
 };
 
 type LoginFormMode = "page" | "drawer" | "popup";
-type LoginIntent = "signin" | "signup";
 
 function getSafeNextPath(candidate: string | null) {
   if (!candidate || !candidate.startsWith("/")) {
@@ -80,11 +78,10 @@ function GoogleIdentityButton({
   ready,
   pending,
   onCredential,
-  className,
+  className = "",
   loadingLabel = "Google girişi hazırlanıyor...",
   visualLabel = "Google ile Devam Et",
-  visualHint,
-  compact = false,
+  emphasized = false,
 }: GoogleIdentityButtonProps) {
   const shellRef = useRef<HTMLDivElement | null>(null);
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -153,19 +150,20 @@ function GoogleIdentityButton({
   return (
     <div ref={shellRef} className={`relative ${className}`}>
       <div
-        className={`relative overflow-hidden rounded-[14px] border border-zinc-200 bg-white shadow-[0_10px_24px_rgba(15,23,42,0.05)] transition-all duration-200 ${pending ? "opacity-80" : "hover:border-zinc-300 hover:shadow-[0_14px_30px_rgba(15,23,42,0.08)]"}`}
+        className={`relative overflow-hidden rounded-[16px] border bg-white transition-all duration-300 ${
+          emphasized
+            ? "border-rose-300 shadow-[0_16px_34px_rgba(225,29,72,0.16)] ring-4 ring-rose-100/80"
+            : "border-zinc-200 shadow-[0_8px_20px_rgba(15,23,42,0.05)] hover:border-zinc-300 hover:shadow-[0_12px_28px_rgba(15,23,42,0.08)]"
+        }`}
       >
-        <div className={`pointer-events-none relative flex items-center px-4 ${compact ? "min-h-[56px]" : "min-h-[60px]"}`}>
-          <span className="absolute left-4 inline-flex h-5 w-5 items-center justify-center">
+        <div className="pointer-events-none relative flex min-h-[62px] items-center px-5">
+          <span className="absolute left-5 inline-flex h-5 w-5 items-center justify-center">
             <Image src="/google-g-logo.svg" alt="" width={20} height={20} className="h-5 w-5" />
           </span>
-          <div className="w-full text-center">
-            <div className="text-[15px] font-medium text-zinc-800">{visualLabel}</div>
-            {visualHint ? <div className="mt-0.5 text-xs text-zinc-500">{visualHint}</div> : null}
-          </div>
+          <div className="w-full text-center text-[15px] font-medium text-zinc-800">{visualLabel}</div>
         </div>
 
-        <div ref={hostRef} className={`absolute inset-0 transition-opacity duration-200 ${ready ? "opacity-[0.015]" : "opacity-0"}`} />
+        <div ref={hostRef} className={`absolute inset-0 transition-opacity duration-200 ${ready ? "opacity-[0.02]" : "opacity-0"}`} />
 
         {!ready ? (
           <div className="absolute inset-0 flex items-center justify-center gap-2 bg-white text-sm text-zinc-500">
@@ -185,7 +183,7 @@ export function LoginForm({ mode = "page", nextPath: nextPathOverride }: { mode?
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const [googleReady, setGoogleReady] = useState(false);
-  const [intent, setIntent] = useState<LoginIntent>("signin");
+  const [googleEmphasis, setGoogleEmphasis] = useState(false);
   const googleActionRef = useRef<HTMLDivElement | null>(null);
   const nextPath = useMemo(() => getSafeNextPath(nextPathOverride ?? searchParams.get("next")), [nextPathOverride, searchParams]);
 
@@ -237,18 +235,24 @@ export function LoginForm({ mode = "page", nextPath: nextPathOverride }: { mode?
     };
   }, []);
 
+  useEffect(() => {
+    if (!googleEmphasis) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => setGoogleEmphasis(false), 1400);
+    return () => window.clearTimeout(timeoutId);
+  }, [googleEmphasis]);
+
   const isDrawerMode = mode === "drawer";
   const isPopupMode = mode === "popup";
 
-  const focusGoogleButton = (nextIntent: LoginIntent) => {
-    setIntent(nextIntent);
+  const focusGoogleButton = () => {
+    setGoogleEmphasis(true);
     googleActionRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
     const clickable = googleActionRef.current?.querySelector('[role="button"]') as HTMLElement | null;
     clickable?.focus();
   };
-
-  const popupIntentHint =
-    intent === "signup" ? "Yeni hesabını Google ile birkaç saniyede oluştur." : "Mevcut Google hesabınla güvenle devam et.";
 
   if (isPopupMode) {
     return (
@@ -273,9 +277,8 @@ export function LoginForm({ mode = "page", nextPath: nextPathOverride }: { mode?
               ready={googleReady}
               pending={loginMutation.isPending}
               onCredential={handleCredential}
-              className=""
-              visualLabel="Google ile Devam Et"
-              visualHint={popupIntentHint}
+              visualLabel="Google ile devam edin"
+              emphasized={googleEmphasis}
             />
           </div>
 
@@ -288,24 +291,16 @@ export function LoginForm({ mode = "page", nextPath: nextPathOverride }: { mode?
           <div className="space-y-3">
             <button
               type="button"
-              onClick={() => focusGoogleButton("signin")}
-              className={`w-full rounded-[12px] px-4 py-4 text-base font-semibold text-white transition duration-200 ${
-                intent === "signin"
-                  ? "bg-rose-600 shadow-[0_16px_32px_rgba(225,29,72,0.26)] hover:bg-rose-700"
-                  : "bg-rose-500 hover:bg-rose-600"
-              }`}
+              onClick={focusGoogleButton}
+              className="w-full rounded-[12px] bg-rose-600 px-4 py-4 text-base font-semibold text-white shadow-[0_16px_32px_rgba(225,29,72,0.26)] transition duration-200 hover:bg-rose-700"
             >
               Giriş Yap
             </button>
 
             <button
               type="button"
-              onClick={() => focusGoogleButton("signup")}
-              className={`w-full rounded-[12px] border px-4 py-4 text-base font-medium transition duration-200 ${
-                intent === "signup"
-                  ? "border-zinc-900 bg-zinc-50 text-zinc-950 shadow-[0_10px_24px_rgba(15,23,42,0.08)]"
-                  : "border-zinc-300 bg-white text-zinc-800 hover:border-zinc-400 hover:bg-zinc-50"
-              }`}
+              onClick={focusGoogleButton}
+              className="w-full rounded-[12px] border border-zinc-300 bg-white px-4 py-4 text-base font-medium text-zinc-800 transition duration-200 hover:border-zinc-400 hover:bg-zinc-50"
             >
               Kayıt Ol
             </button>
@@ -387,9 +382,7 @@ export function LoginForm({ mode = "page", nextPath: nextPathOverride }: { mode?
               pending={loginMutation.isPending}
               onCredential={handleCredential}
               className={`mt-5 ${isDrawerMode ? "rounded-2xl" : "rounded-[24px]"}`}
-              visualLabel="Google ile Devam Et"
-              visualHint="Güvenli şekilde hesabına bağlan ve kaldığın yerden devam et."
-              compact={false}
+              visualLabel="Google ile devam edin"
             />
 
             <div className="mt-4 flex flex-wrap gap-2 text-xs text-zinc-500">

@@ -1,11 +1,10 @@
-"use client";
+﻿"use client";
 
 import Script from "next/script";
-import Image from "next/image";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
 import { BadgeCheck, BellRing, LockKeyhole, QrCode, Sparkles, Wallet } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Card, CardContent } from "@/components/ui/card";
@@ -31,6 +30,21 @@ declare global {
   }
 }
 
+type GoogleCredentialResponse = {
+  credential?: string;
+};
+
+type GoogleButtonText = "continue_with" | "signin_with" | "signup_with";
+
+type GoogleIdentityButtonProps = {
+  text: GoogleButtonText;
+  ready: boolean;
+  pending: boolean;
+  onCredential: (response: GoogleCredentialResponse) => void;
+  className: string;
+  loadingLabel?: string;
+};
+
 function getSafeNextPath(candidate: string | null) {
   if (!candidate || !candidate.startsWith("/")) {
     return "/";
@@ -54,18 +68,102 @@ async function submitLogin(idToken: string) {
   return payload as SessionState;
 }
 
+function GoogleIdentityButton({
+  text,
+  ready,
+  pending,
+  onCredential,
+  className,
+  loadingLabel = "Google girişi hazırlanıyor...",
+}: GoogleIdentityButtonProps) {
+  const shellRef = useRef<HTMLDivElement | null>(null);
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  const [buttonWidth, setButtonWidth] = useState(320);
+
+  useEffect(() => {
+    const shellElement = shellRef.current;
+
+    if (!shellElement) {
+      return;
+    }
+
+    const updateWidth = () => {
+      const nextWidth = Math.max(220, Math.min(Math.floor(shellElement.clientWidth) - 8, 380));
+      setButtonWidth(nextWidth);
+    };
+
+    updateWidth();
+
+    if (typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(shellElement);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
+  useEffect(() => {
+    const buttonHost = hostRef.current;
+
+    if (!ready || !buttonHost || !env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || !window.google?.accounts?.id) {
+      return;
+    }
+
+    buttonHost.replaceChildren();
+    window.google.accounts.id.initialize({
+      client_id: env.NEXT_PUBLIC_GOOGLE_CLIENT_ID,
+      callback: onCredential,
+      ux_mode: "popup",
+      auto_select: false,
+    });
+    window.google.accounts.id.renderButton(buttonHost, {
+      type: "standard",
+      theme: "outline",
+      size: "large",
+      text,
+      shape: "pill",
+      width: buttonWidth,
+      locale: "tr",
+      logo_alignment: "left",
+    });
+
+    return () => {
+      buttonHost.replaceChildren();
+    };
+  }, [buttonWidth, onCredential, ready, text]);
+
+  if (!env.NEXT_PUBLIC_GOOGLE_CLIENT_ID) {
+    return <p className="text-center text-sm text-zinc-600">Google giriş ayarı şu anda hazır değil.</p>;
+  }
+
+  return (
+    <div ref={shellRef} className={`relative ${className}`}>
+      <div
+        ref={hostRef}
+        className={`flex min-h-11 w-full items-center justify-center transition-opacity duration-200 ${ready ? "opacity-100" : "opacity-0"}`}
+      />
+      {!ready ? (
+        <div className="absolute inset-0 flex items-center justify-center gap-2 rounded-inherit bg-white text-sm text-zinc-500">
+          <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-emerald-500" />
+          {loadingLabel}
+        </div>
+      ) : null}
+      {pending ? <div className="absolute inset-0 rounded-inherit bg-white/70" aria-hidden="true" /> : null}
+    </div>
+  );
+}
+
 type LoginFormMode = "page" | "drawer" | "popup";
 
 export function LoginForm({ mode = "page", nextPath: nextPathOverride }: { mode?: LoginFormMode; nextPath?: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
-  const googleButtonRef = useRef<HTMLDivElement | null>(null);
-  const googleButtonShellRef = useRef<HTMLDivElement | null>(null);
-  const loginPendingRef = useRef(false);
-  const loginMutateRef = useRef<(idToken: string) => void>(() => undefined);
   const [googleReady, setGoogleReady] = useState(false);
-  const [googleButtonWidth, setGoogleButtonWidth] = useState(320);
   const nextPath = useMemo(() => getSafeNextPath(nextPathOverride ?? searchParams.get("next")), [nextPathOverride, searchParams]);
 
   const loginMutation = useMutation({
@@ -83,13 +181,16 @@ export function LoginForm({ mode = "page", nextPath: nextPathOverride }: { mode?
     },
   });
 
-  useEffect(() => {
-    loginPendingRef.current = loginMutation.isPending;
-  }, [loginMutation.isPending]);
+  const handleCredential = useCallback(
+    (response: GoogleCredentialResponse) => {
+      if (!response.credential || loginMutation.isPending) {
+        return;
+      }
 
-  useEffect(() => {
-    loginMutateRef.current = loginMutation.mutate;
-  }, [loginMutation.mutate]);
+      loginMutation.mutate(response.credential);
+    },
+    [loginMutation],
+  );
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -113,73 +214,8 @@ export function LoginForm({ mode = "page", nextPath: nextPathOverride }: { mode?
     };
   }, []);
 
-  useEffect(() => {
-    const shellElement = googleButtonShellRef.current;
-
-    if (!shellElement) {
-      return;
-    }
-
-    const updateWidth = () => {
-      const nextWidth = Math.max(240, Math.min(Math.floor(shellElement.clientWidth) - 24, 380));
-      setGoogleButtonWidth(nextWidth);
-    };
-
-    updateWidth();
-
-    if (typeof ResizeObserver === "undefined") {
-      return;
-    }
-
-    const observer = new ResizeObserver(updateWidth);
-    observer.observe(shellElement);
-
-    return () => {
-      observer.disconnect();
-    };
-  }, []);
-
-  useEffect(() => {
-    const buttonHost = googleButtonRef.current;
-
-    if (!googleReady || !buttonHost || !env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || !window.google?.accounts?.id) {
-      return;
-    }
-
-    buttonHost.replaceChildren();
-    window.google.accounts.id.initialize({
-      client_id: env.NEXT_PUBLIC_GOOGLE_CLIENT_ID,
-      callback: (response: { credential?: string }) => {
-        if (!response.credential || loginPendingRef.current) {
-          return;
-        }
-        loginMutateRef.current(response.credential);
-      },
-      ux_mode: "popup",
-      auto_select: false,
-    });
-    window.google.accounts.id.renderButton(buttonHost, {
-      type: "standard",
-      theme: "outline",
-      size: "large",
-      text: "continue_with",
-      shape: "pill",
-      width: googleButtonWidth,
-    });
-
-    return () => {
-      buttonHost.replaceChildren();
-      window.google?.accounts?.id?.cancel?.();
-    };
-  }, [googleReady, googleButtonWidth]);
-
   const isDrawerMode = mode === "drawer";
   const isPopupMode = mode === "popup";
-  const triggerGoogleLogin = () => {
-    const host = googleButtonRef.current;
-    const button = host?.querySelector("div[role='button']") as HTMLDivElement | null;
-    button?.click();
-  };
 
   if (isPopupMode) {
     return (
@@ -195,57 +231,48 @@ export function LoginForm({ mode = "page", nextPath: nextPathOverride }: { mode?
         <div className="mx-auto flex w-full max-w-[332px] flex-col space-y-5">
           <div className="space-y-1.5 text-center">
             <h3 className="text-3xl font-semibold tracking-tight text-zinc-900">Hoş geldin!</h3>
-            <p className="text-sm text-zinc-600">Devam etmek için kayıt ol ya da giriş yap</p>
+            <p className="text-sm text-zinc-600">Devam etmek için kayıt ol ya da giriş yap.</p>
           </div>
 
-          <div ref={googleButtonShellRef} className="relative">
-            <button
-              type="button"
-              onClick={triggerGoogleLogin}
-              disabled={!env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || !googleReady || loginMutation.isPending}
-              className="group relative flex min-h-[58px] w-full items-center justify-center overflow-hidden rounded-[14px] border border-zinc-300 bg-white px-5 py-3 text-center shadow-[0_10px_24px_rgba(15,23,42,0.05)] transition-all duration-200 hover:-translate-y-0.5 hover:border-zinc-400 hover:shadow-[0_18px_34px_rgba(15,23,42,0.1)] disabled:cursor-wait disabled:opacity-75"
-            >
-              <span className="absolute left-4 inline-flex h-7 w-7 items-center justify-center">
-                <Image src="/google-g-logo.svg" alt="" width={20} height={20} className="h-5 w-5" />
-              </span>
-
-              <span className="block text-base font-medium text-zinc-800 transition-colors duration-200 group-hover:text-zinc-950">
-                {loginMutation.isPending
-                  ? "Google hesab\u0131 do\u011Frulan\u0131yor"
-                  : "Google ile devam edin"}
-              </span>
-            </button>
-
-            {env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ? (
-              <div className="pointer-events-none absolute -left-[9999px] top-0 opacity-0" aria-hidden="true">
-                <div ref={googleButtonRef} className="min-h-11 w-full max-w-[320px]" />
-              </div>
-            ) : (
-              <p className="mt-3 text-center text-sm text-zinc-600">Google giriş ayarı şu anda hazır değil.</p>
-            )}
-          </div>
+          <GoogleIdentityButton
+            text="continue_with"
+            ready={googleReady}
+            pending={loginMutation.isPending}
+            onCredential={handleCredential}
+            className="min-h-[58px] overflow-hidden rounded-[14px] border border-zinc-300 bg-white px-3 py-2 text-center shadow-[0_10px_24px_rgba(15,23,42,0.05)]"
+          />
 
           <div className="flex items-center gap-3 text-xs text-zinc-400">
             <div className="h-px flex-1 bg-zinc-200" />
-            <span>ya da</span>
+            <span>veya</span>
             <div className="h-px flex-1 bg-zinc-200" />
           </div>
 
-          <button
-            type="button"
-            onClick={triggerGoogleLogin}
-            className="w-full rounded-xl bg-rose-600 px-4 py-3 text-sm font-semibold text-white transition duration-200 hover:-translate-y-0.5 hover:bg-rose-700 hover:shadow-[0_16px_32px_rgba(225,29,72,0.28)]"
-          >
-            Giriş Yap
-          </button>
+          <div className="space-y-3">
+            <div className="rounded-2xl border border-zinc-200 bg-white p-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+              <div className="mb-2 text-sm font-semibold text-zinc-900">Giriş Yap</div>
+              <GoogleIdentityButton
+                text="signin_with"
+                ready={googleReady}
+                pending={loginMutation.isPending}
+                onCredential={handleCredential}
+                className="min-h-[54px] overflow-hidden rounded-xl border border-zinc-200 bg-zinc-50 px-2 py-2"
+                loadingLabel="Google girişi yükleniyor..."
+              />
+            </div>
 
-          <button
-            type="button"
-            onClick={triggerGoogleLogin}
-            className="w-full rounded-xl border border-zinc-300 bg-white px-4 py-3 text-sm font-medium text-zinc-800 transition duration-200 hover:-translate-y-0.5 hover:border-zinc-400 hover:bg-zinc-50 hover:shadow-[0_14px_32px_rgba(15,23,42,0.08)]"
-          >
-            Kayıt Ol
-          </button>
+            <div className="rounded-2xl border border-zinc-200 bg-white p-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+              <div className="mb-2 text-sm font-semibold text-zinc-900">Kayıt Ol</div>
+              <GoogleIdentityButton
+                text="signup_with"
+                ready={googleReady}
+                pending={loginMutation.isPending}
+                onCredential={handleCredential}
+                className="min-h-[54px] overflow-hidden rounded-xl border border-zinc-200 bg-zinc-50 px-2 py-2"
+                loadingLabel="Google kaydı yükleniyor..."
+              />
+            </div>
+          </div>
         </div>
       </>
     );
@@ -317,26 +344,15 @@ export function LoginForm({ mode = "page", nextPath: nextPathOverride }: { mode?
               </div>
             </div>
 
-            <div
-              ref={googleButtonShellRef}
-              className={`relative mt-5 flex min-h-[88px] items-center justify-center overflow-hidden border border-zinc-200 bg-white px-4 py-4 shadow-[0_8px_30px_rgba(0,0,0,0.04)] ${
+            <GoogleIdentityButton
+              text="continue_with"
+              ready={googleReady}
+              pending={loginMutation.isPending}
+              onCredential={handleCredential}
+              className={`mt-5 flex min-h-[88px] items-center justify-center overflow-hidden border border-zinc-200 bg-white px-4 py-4 shadow-[0_8px_30px_rgba(0,0,0,0.04)] ${
                 isDrawerMode ? "rounded-2xl" : "rounded-[24px]"
               }`}
-            >
-              {env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ? (
-                <>
-                  <div ref={googleButtonRef} className={`flex min-h-11 w-full items-center justify-center transition-opacity duration-200 ${googleReady ? "opacity-100" : "opacity-0"}`} />
-                  {!googleReady ? (
-                    <div className="absolute inset-0 flex items-center justify-center gap-2 bg-white text-sm text-zinc-500">
-                      <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-emerald-500" />
-                      Google girişi hazırlanıyor...
-                    </div>
-                  ) : null}
-                </>
-              ) : (
-                <p className="text-center text-sm text-zinc-600">Google giriş ayarı şu anda hazır değil. Lütfen daha sonra tekrar deneyin.</p>
-              )}
-            </div>
+            />
 
             <div className="mt-4 flex flex-wrap gap-2 text-xs text-zinc-500">
               <span className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1.5 shadow-sm">

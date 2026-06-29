@@ -36,6 +36,7 @@ type GoogleCredentialResponse = {
 };
 
 type GoogleButtonText = "continue_with" | "signin_with" | "signup_with";
+type GoogleButtonVariant = "google" | "primary" | "secondary";
 
 type GoogleIdentityButtonProps = {
   text: GoogleButtonText;
@@ -44,8 +45,8 @@ type GoogleIdentityButtonProps = {
   onCredential: (response: GoogleCredentialResponse) => void;
   className?: string;
   loadingLabel?: string;
-  visualLabel?: string;
-  emphasized?: boolean;
+  visualLabel: string;
+  variant?: GoogleButtonVariant;
 };
 
 type LoginFormMode = "page" | "drawer" | "popup";
@@ -80,8 +81,8 @@ function GoogleIdentityButton({
   onCredential,
   className = "",
   loadingLabel = "Google girişi hazırlanıyor...",
-  visualLabel = "Google ile Devam Et",
-  emphasized = false,
+  visualLabel,
+  variant = "google",
 }: GoogleIdentityButtonProps) {
   const shellRef = useRef<HTMLDivElement | null>(null);
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -129,7 +130,7 @@ function GoogleIdentityButton({
     });
     window.google.accounts.id.renderButton(buttonHost, {
       type: "standard",
-      theme: "outline",
+      theme: variant === "primary" ? "filled_blue" : "outline",
       size: "large",
       text,
       shape: "rectangular",
@@ -141,26 +142,31 @@ function GoogleIdentityButton({
     return () => {
       buttonHost.replaceChildren();
     };
-  }, [buttonWidth, onCredential, ready, text]);
+  }, [buttonWidth, onCredential, ready, text, variant]);
 
   if (!env.NEXT_PUBLIC_GOOGLE_CLIENT_ID) {
     return <p className="text-center text-sm text-zinc-600">Google giriş ayarı şu anda hazır değil.</p>;
   }
 
+  const surfaceClassName =
+    variant === "primary"
+      ? "border-rose-600 bg-rose-600 text-white shadow-[0_16px_32px_rgba(225,29,72,0.26)] hover:bg-rose-700 hover:border-rose-700"
+      : variant === "secondary"
+        ? "border-zinc-300 bg-white text-zinc-800 hover:border-zinc-400 hover:bg-zinc-50"
+        : "border-zinc-200 bg-white text-zinc-800 shadow-[0_8px_20px_rgba(15,23,42,0.05)] hover:border-zinc-300 hover:shadow-[0_12px_28px_rgba(15,23,42,0.08)]";
+
   return (
     <div ref={shellRef} className={`relative ${className}`}>
       <div
-        className={`relative overflow-hidden rounded-[16px] border bg-white transition-all duration-300 ${
-          emphasized
-            ? "border-rose-300 shadow-[0_16px_34px_rgba(225,29,72,0.16)] ring-4 ring-rose-100/80"
-            : "border-zinc-200 shadow-[0_8px_20px_rgba(15,23,42,0.05)] hover:border-zinc-300 hover:shadow-[0_12px_28px_rgba(15,23,42,0.08)]"
-        }`}
+        className={`relative overflow-hidden rounded-[16px] border transition-all duration-200 ${surfaceClassName} ${pending ? "opacity-80" : ""}`}
       >
         <div className="pointer-events-none relative flex min-h-[62px] items-center px-5">
-          <span className="absolute left-5 inline-flex h-5 w-5 items-center justify-center">
-            <Image src="/google-g-logo.svg" alt="" width={20} height={20} className="h-5 w-5" />
-          </span>
-          <div className="w-full text-center text-[15px] font-medium text-zinc-800">{visualLabel}</div>
+          {variant === "google" ? (
+            <span className="absolute left-5 inline-flex h-5 w-5 items-center justify-center">
+              <Image src="/google-g-logo.svg" alt="" width={20} height={20} className="h-5 w-5" />
+            </span>
+          ) : null}
+          <div className="w-full text-center text-[15px] font-medium">{visualLabel}</div>
         </div>
 
         <div ref={hostRef} className={`absolute inset-0 transition-opacity duration-200 ${ready ? "opacity-[0.02]" : "opacity-0"}`} />
@@ -183,8 +189,6 @@ export function LoginForm({ mode = "page", nextPath: nextPathOverride }: { mode?
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const [googleReady, setGoogleReady] = useState(false);
-  const [googleEmphasis, setGoogleEmphasis] = useState(false);
-  const googleActionRef = useRef<HTMLDivElement | null>(null);
   const nextPath = useMemo(() => getSafeNextPath(nextPathOverride ?? searchParams.get("next")), [nextPathOverride, searchParams]);
 
   const loginMutation = useMutation({
@@ -235,24 +239,8 @@ export function LoginForm({ mode = "page", nextPath: nextPathOverride }: { mode?
     };
   }, []);
 
-  useEffect(() => {
-    if (!googleEmphasis) {
-      return;
-    }
-
-    const timeoutId = window.setTimeout(() => setGoogleEmphasis(false), 1400);
-    return () => window.clearTimeout(timeoutId);
-  }, [googleEmphasis]);
-
   const isDrawerMode = mode === "drawer";
   const isPopupMode = mode === "popup";
-
-  const focusGoogleButton = () => {
-    setGoogleEmphasis(true);
-    googleActionRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-    const clickable = googleActionRef.current?.querySelector('[role="button"]') as HTMLElement | null;
-    clickable?.focus();
-  };
 
   if (isPopupMode) {
     return (
@@ -271,16 +259,13 @@ export function LoginForm({ mode = "page", nextPath: nextPathOverride }: { mode?
             <p className="text-base leading-6 text-zinc-600">Kayıt ol veya giriş yap</p>
           </div>
 
-          <div ref={googleActionRef}>
-            <GoogleIdentityButton
-              text="continue_with"
-              ready={googleReady}
-              pending={loginMutation.isPending}
-              onCredential={handleCredential}
-              visualLabel="Google ile devam edin"
-              emphasized={googleEmphasis}
-            />
-          </div>
+          <GoogleIdentityButton
+            text="continue_with"
+            ready={googleReady}
+            pending={loginMutation.isPending}
+            onCredential={handleCredential}
+            visualLabel="Google ile devam edin"
+          />
 
           <div className="flex items-center gap-3 text-sm text-zinc-400">
             <div className="h-px flex-1 bg-zinc-200" />
@@ -289,21 +274,23 @@ export function LoginForm({ mode = "page", nextPath: nextPathOverride }: { mode?
           </div>
 
           <div className="space-y-3">
-            <button
-              type="button"
-              onClick={focusGoogleButton}
-              className="w-full rounded-[12px] bg-rose-600 px-4 py-4 text-base font-semibold text-white shadow-[0_16px_32px_rgba(225,29,72,0.26)] transition duration-200 hover:bg-rose-700"
-            >
-              Giriş Yap
-            </button>
+            <GoogleIdentityButton
+              text="signin_with"
+              ready={googleReady}
+              pending={loginMutation.isPending}
+              onCredential={handleCredential}
+              visualLabel="Giriş Yap"
+              variant="primary"
+            />
 
-            <button
-              type="button"
-              onClick={focusGoogleButton}
-              className="w-full rounded-[12px] border border-zinc-300 bg-white px-4 py-4 text-base font-medium text-zinc-800 transition duration-200 hover:border-zinc-400 hover:bg-zinc-50"
-            >
-              Kayıt Ol
-            </button>
+            <GoogleIdentityButton
+              text="signup_with"
+              ready={googleReady}
+              pending={loginMutation.isPending}
+              onCredential={handleCredential}
+              visualLabel="Kayıt Ol"
+              variant="secondary"
+            />
           </div>
         </div>
       </>

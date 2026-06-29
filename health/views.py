@@ -43,18 +43,6 @@ def _database_ready() -> bool:
 
 
 def _cache_ready() -> bool:
-    backend = str(getattr(cache, "_cache", None).__class__.__name__ if hasattr(cache, "_cache") else "")
-    if backend == "RedisCacheClient":
-        try:
-            client = cache._cache.get_client(None, write=True)
-            kwargs = dict(getattr(client.connection_pool, "connection_kwargs", {}) or {})
-            kwargs["socket_connect_timeout"] = float(getattr(settings, "READINESS_CACHE_TIMEOUT_SECONDS", 1.0))
-            kwargs["socket_timeout"] = float(getattr(settings, "READINESS_CACHE_TIMEOUT_SECONDS", 1.0))
-            fast_client = redis.Redis(**kwargs)
-            return bool(fast_client.ping())
-        except Exception:
-            return False
-
     cache_key = f"readiness:test:{uuid.uuid4().hex}"
     try:
         cache.set(cache_key, "ok", timeout=10)

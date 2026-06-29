@@ -158,12 +158,15 @@ function GoogleIdentityButton({
 }
 
 type LoginFormMode = "page" | "drawer" | "popup";
+type LoginIntent = "signin" | "signup";
 
 export function LoginForm({ mode = "page", nextPath: nextPathOverride }: { mode?: LoginFormMode; nextPath?: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const [googleReady, setGoogleReady] = useState(false);
+  const [intent, setIntent] = useState<LoginIntent>("signin");
+  const googleActionRef = useRef<HTMLDivElement | null>(null);
   const nextPath = useMemo(() => getSafeNextPath(nextPathOverride ?? searchParams.get("next")), [nextPathOverride, searchParams]);
 
   const loginMutation = useMutation({
@@ -217,6 +220,13 @@ export function LoginForm({ mode = "page", nextPath: nextPathOverride }: { mode?
   const isDrawerMode = mode === "drawer";
   const isPopupMode = mode === "popup";
 
+  const focusGoogleButton = (nextIntent: LoginIntent) => {
+    setIntent(nextIntent);
+    googleActionRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    const clickable = googleActionRef.current?.querySelector('[role="button"]') as HTMLElement | null;
+    clickable?.focus();
+  };
+
   if (isPopupMode) {
     return (
       <>
@@ -228,56 +238,56 @@ export function LoginForm({ mode = "page", nextPath: nextPathOverride }: { mode?
             onReady={() => setGoogleReady(true)}
           />
         ) : null}
-        <div className="mx-auto flex w-full max-w-[332px] flex-col space-y-5">
-          <div className="space-y-1.5 text-center">
-            <h3 className="text-3xl font-semibold tracking-tight text-zinc-900">Hoş geldin!</h3>
-            <p className="text-sm text-zinc-600">Devam etmek için kayıt ol ya da giriş yap</p>
+        <div className="mx-auto flex w-full max-w-[336px] flex-col space-y-5">
+          <div className="space-y-2 text-left">
+            <h3 className="text-[2rem] font-semibold tracking-tight text-zinc-900">HalkYemek&apos;e devam etmek için</h3>
+            <p className="text-base leading-6 text-zinc-600">Kayıt ol veya giriş yap</p>
           </div>
 
-          <div className="rounded-[14px] border border-zinc-300 bg-white p-1.5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+          <div
+            ref={googleActionRef}
+            className="rounded-[14px] border border-zinc-200 bg-white p-1.5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]"
+          >
+            <div className="mb-2 px-3 pt-2 text-sm font-medium text-zinc-700">Google ile Devam Et</div>
             <GoogleIdentityButton
               text="continue_with"
               ready={googleReady}
               pending={loginMutation.isPending}
               onCredential={handleCredential}
-              className="min-h-[58px] overflow-hidden rounded-[12px] bg-white px-2 py-2"
+              className="min-h-[56px] overflow-hidden rounded-[12px] bg-white px-2 py-2"
             />
           </div>
 
-          <div className="flex items-center gap-3 text-xs text-zinc-400">
+          <div className="flex items-center gap-3 text-sm text-zinc-400">
             <div className="h-px flex-1 bg-zinc-200" />
             <span>ya da</span>
             <div className="h-px flex-1 bg-zinc-200" />
           </div>
 
           <div className="space-y-3">
-            <div className="rounded-[18px] bg-rose-600 p-[1px] shadow-[0_16px_32px_rgba(225,29,72,0.2)]">
-              <div className="rounded-[17px] bg-rose-600 px-4 py-3 text-white">
-                <div className="text-sm font-semibold">Giriş Yap</div>
-                <div className="mt-1 text-xs text-rose-100">Mevcut hesabınla hızlıca devam et.</div>
-                <GoogleIdentityButton
-                  text="signin_with"
-                  ready={googleReady}
-                  pending={loginMutation.isPending}
-                  onCredential={handleCredential}
-                  className="mt-3 min-h-[54px] overflow-hidden rounded-xl bg-white px-2 py-2"
-                  loadingLabel="Google girişi yükleniyor..."
-                />
-              </div>
-            </div>
+            <button
+              type="button"
+              onClick={() => focusGoogleButton("signin")}
+              className={`w-full rounded-[12px] px-4 py-4 text-base font-semibold text-white transition duration-200 ${
+                intent === "signin"
+                  ? "bg-rose-600 shadow-[0_16px_32px_rgba(225,29,72,0.26)] hover:bg-rose-700"
+                  : "bg-rose-500 hover:bg-rose-600"
+              }`}
+            >
+              Giriş Yap
+            </button>
 
-            <div className="rounded-[18px] border border-zinc-300 bg-white p-4 shadow-[0_14px_32px_rgba(15,23,42,0.08)]">
-              <div className="text-sm font-semibold text-zinc-900">Kayıt Ol</div>
-              <div className="mt-1 text-xs text-zinc-500">İlk siparişin için hesabını birkaç saniyede oluştur.</div>
-              <GoogleIdentityButton
-                text="signup_with"
-                ready={googleReady}
-                pending={loginMutation.isPending}
-                onCredential={handleCredential}
-                className="mt-3 min-h-[54px] overflow-hidden rounded-xl bg-zinc-50 px-2 py-2"
-                loadingLabel="Google kaydı yükleniyor..."
-              />
-            </div>
+            <button
+              type="button"
+              onClick={() => focusGoogleButton("signup")}
+              className={`w-full rounded-[12px] border px-4 py-4 text-base font-medium transition duration-200 ${
+                intent === "signup"
+                  ? "border-zinc-900 bg-zinc-50 text-zinc-950 shadow-[0_10px_24px_rgba(15,23,42,0.08)]"
+                  : "border-zinc-300 bg-white text-zinc-800 hover:border-zinc-400 hover:bg-zinc-50"
+              }`}
+            >
+              Kayıt Ol
+            </button>
           </div>
         </div>
       </>
@@ -301,10 +311,10 @@ export function LoginForm({ mode = "page", nextPath: nextPathOverride }: { mode?
               <LockKeyhole className="h-3.5 w-3.5" /> Güvenli Google girişi
             </span>
             <div>
-              <h2 className={`${isDrawerMode ? "text-xl" : "text-2xl"} font-semibold tracking-tight text-zinc-950`}>Hesabınla hızlıca devam et</h2>
-              <p className="mt-2 text-sm leading-6 text-zinc-600">
-                Giriş yaptığında cüzdan, QR ve bildirim akışların kesintisiz devam eder.
-              </p>
+              <h2 className={`${isDrawerMode ? "text-xl" : "text-2xl"} font-semibold tracking-tight text-zinc-950`}>
+                HalkYemek&apos;e devam etmek için
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-zinc-600">Kayıt ol veya giriş yap</p>
             </div>
           </div>
 

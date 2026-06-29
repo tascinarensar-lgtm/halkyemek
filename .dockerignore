@@ -31,3 +31,9 @@ dist/
 .vscode/
 .idea/
 .DS_Store
+!.env.example
+!.env.prod.example
+!.env.staging.example
+!.env.example
+!.env.prod.example
+!.env.staging.example

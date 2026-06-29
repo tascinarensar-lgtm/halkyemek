@@ -34,6 +34,3 @@ dist/
 !.env.example
 !.env.prod.example
 !.env.staging.example
-!.env.example
-!.env.prod.example
-!.env.staging.example

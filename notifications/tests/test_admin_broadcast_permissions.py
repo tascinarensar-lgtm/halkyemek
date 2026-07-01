@@ -3,6 +3,7 @@ from unittest.mock import patch
 from rest_framework.test import APIClient
 
 from accounts.models import User
+from logs.models import SystemLog
 from notifications.models import DeliveryAttempt, Device, Notification
 from notifications.services import SystemBroadcastService
 
@@ -42,6 +43,7 @@ class AdminBroadcastPermissionTests(TestCase):
         self.assertIn("queued", response.data)
         self.assertEqual(response.data["task_id"], "system-task-123")
         self.assertTrue(response.data["queued_async"])
+        self.assertTrue(SystemLog.objects.filter(action="notifications.system_broadcast").exists())
         delay.assert_called_once()
 
     @patch("notifications.tasks.send_admin_system_broadcast_task.delay", side_effect=TimeoutError("broker timeout"))
@@ -77,5 +79,6 @@ class AdminBroadcastPermissionTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["task_id"], "local-system-task")
         self.assertTrue(response.data["queued_async"])
+        self.assertTrue(SystemLog.objects.filter(action="notifications.system_broadcast").exists())
         delay.assert_called_once()
         local_fallback.assert_called_once()

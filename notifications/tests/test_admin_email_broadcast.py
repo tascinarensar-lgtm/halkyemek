@@ -5,6 +5,7 @@ from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from accounts.models import User
+from logs.models import SystemLog
 from notifications.models import DeliveryAttempt, EmailDeliveryAttempt, Notification
 from notifications.tasks import send_admin_email_broadcast_task
 from test_support import add_membership, create_business, enable_push_device
@@ -167,6 +168,7 @@ class AdminEmailBroadcastTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.data["dry_run"])
         self.assertEqual(response.data["task_id"], "task-123")
+        self.assertTrue(SystemLog.objects.filter(action="notifications.email_broadcast").exists())
         delay.assert_called_once()
 
     @override_settings(EMAIL_NOTIFICATIONS_ENABLED=True)

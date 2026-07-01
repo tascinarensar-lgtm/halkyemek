@@ -17,7 +17,7 @@ class SystemLog(models.Model):
         blank=True
     )
     action = models.CharField(
-        max_length=20,
+        max_length=100,
         choices=ActionType.choices
     )
     description = models.TextField()
